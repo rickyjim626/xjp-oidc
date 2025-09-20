@@ -1,0 +1,40 @@
+[package]
+name = "xjp-oidc-axum"
+version = "1.0.0-rc.1"
+edition = "2021"
+rust-version = "1.82"
+authors = ["XiaojinPro Team"]
+license = "MIT OR Apache-2.0"
+description = "Axum integration for xjp-oidc - OIDC/OAuth2 middleware and extractors"
+repository = "https://github.com/xiaojinpro/xjp-oidc"
+homepage = "https://github.com/xiaojinpro/xjp-oidc"
+documentation = "https://docs.rs/xjp-oidc-axum"
+readme = "../README.md"
+keywords = ["oidc", "oauth2", "axum", "middleware", "authentication"]
+categories = ["authentication", "web-programming"]
+
+[dependencies]
+xjp-oidc = { path = "../xjp-oidc", version = "1.0.0-rc.1", features = ["verifier"] }
+axum = "0.7"
+axum-core = "0.4"
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = { version = "0.5", features = ["util"] }
+tower-service = "0.3"
+http = "1.0"
+http-body = "1.0"
+http-body-util = "0.1"
+futures-util = "0.3"
+thiserror = "1.0"
+tracing = { version = "0.1", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1.38", features = ["full", "test-util"] }
+tower = { version = "0.5", features = ["util"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["server"] }
+
+[features]
+default = ["tracing"]
+tracing = ["dep:tracing", "xjp-oidc/tracing"]

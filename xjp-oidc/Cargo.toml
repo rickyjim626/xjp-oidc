@@ -1,0 +1,114 @@
+[package]
+name = "xjp-oidc"
+version = "1.0.0-rc.1"
+edition = "2021"
+rust-version = "1.82"
+authors = ["XiaojinPro Team"]
+license = "MIT OR Apache-2.0"
+description = "OIDC/OAuth2 SDK for Rust - Server and WASM support"
+repository = "https://github.com/xiaojinpro/xjp-oidc"
+homepage = "https://github.com/xiaojinpro/xjp-oidc"
+documentation = "https://docs.rs/xjp-oidc"
+readme = "../README.md"
+keywords = ["oidc", "oauth2", "authentication", "jwt", "wasm"]
+categories = ["authentication", "web-programming", "wasm"]
+
+[features]
+default = ["http-reqwest", "tls-rustls", "tracing", "moka", "lru", "verifier"]
+# HTTP client features
+http-reqwest = ["reqwest", "reqwest/json", "reqwest/rustls-tls"]
+http-wasm = ["gloo-net", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+tls-rustls = []  # For reqwest rustls
+# Optional features
+axum = ["axum-core", "axum-extra", "tower", "http"]
+verifier = []
+browser-min = []  # Minimal browser support
+tracing = ["dep:tracing"]
+moka = ["dep:moka", "tokio"]
+lru = ["dep:lru"]
+
+[dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+url = { version = "2.5", features = ["serde"] }
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+time = { version = "0.3", features = ["serde", "serde-human-readable"] }
+
+# JWT/JWS handling
+josekit = "0.8"
+
+# URL encoding
+urlencoding = "2.1"
+
+# Async runtime
+async-trait = "0.1"
+tokio = { version = "1.38", features = ["macros", "rt", "time"], optional = true }
+futures = "0.3"
+
+# HTTP clients
+reqwest = { version = "0.12", default-features = false, optional = true }
+
+# WASM dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = ["Window", "Request", "Response", "Headers"], optional = true }
+gloo-net = { version = "0.5", optional = true }
+
+# Cache
+moka = { version = "0.12", features = ["future"], optional = true }
+lru = { version = "0.12", optional = true }
+
+# Axum integration
+axum-core = { version = "0.4", optional = true }
+axum-extra = { version = "0.9", features = ["typed-header"], optional = true }
+tower = { version = "0.4", optional = true }
+http = { version = "1.0", optional = true }
+
+# Logging
+tracing = { version = "0.1", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "time"] }
+moka = { version = "0.12", features = ["future"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+tokio = { version = "1.38", features = ["full", "test-util"] }
+mockito = "1.2"
+wiremock = "0.5"
+proptest = "1.5"
+criterion = "0.5"
+# Example dependencies
+axum = "0.7"
+tower = "0.5"
+dotenvy = "0.15"
+xjp-oidc-axum = { path = "../xjp-oidc-axum" }
+serde_json = "1.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+
+[[example]]
+name = "axum-bff"
+path = "../examples/axum-bff/main.rs"
+required-features = ["http-reqwest", "moka"]
+
+[[example]]
+name = "axum-guard"
+path = "../examples/axum-guard/main.rs"
+required-features = ["verifier", "http-reqwest", "moka"]
+
+[[example]]
+name = "cli-discover"
+path = "../examples/cli-discover/main.rs"
+required-features = ["http-reqwest"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]

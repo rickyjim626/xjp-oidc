@@ -1,0 +1,16 @@
+[workspace]
+members = ["xjp-oidc", "xjp-oidc-axum"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0-rc.1"
+edition = "2021"
+rust-version = "1.82"
+authors = ["XiaojinPro Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/xiaojinpro/xjp-oidc"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
