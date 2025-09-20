@@ -1,0 +1,202 @@
+name: SBOM Generation
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+  schedule:
+    # 每周生成一次
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+      
+      # 安装 cargo-sbom
+      - name: Install cargo-sbom
+        run: cargo install cargo-sbom
+      
+      # 生成 Cargo.lock（如果不存在）
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+      
+      # 生成 SBOM（多种格式）
+      - name: Generate SBOM files
+        run: |
+          # CycloneDX 格式
+          cargo sbom --format cyclonedx-json > sbom-cyclonedx.json
+          cargo sbom --format cyclonedx-xml > sbom-cyclonedx.xml
+          
+          # SPDX 格式
+          cargo sbom --format spdx-json > sbom-spdx.json
+      
+      # 使用 Syft 生成更详细的 SBOM
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      
+      - name: Generate detailed SBOM with Syft
+        run: |
+          syft . -o cyclonedx-json > sbom-syft-cyclonedx.json
+          syft . -o spdx-json > sbom-syft-spdx.json
+          syft . -o github > sbom-github.json
+      
+      # 签名 SBOM
+      - name: Sign SBOM files
+        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@v3
+        
+      - name: Sign with Cosign
+        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        run: |
+          cosign sign-blob --yes sbom-cyclonedx.json > sbom-cyclonedx.json.sig
+          cosign sign-blob --yes sbom-spdx.json > sbom-spdx.json.sig
+      
+      # 上传到 GitHub Release
+      - name: Upload SBOM to Release
+        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            sbom-*.json
+            sbom-*.xml
+            sbom-*.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # 上传为工作流制品
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom-*
+          retention-days: 90
+      
+      # 提交到依赖跟踪 API
+      - name: Submit dependency snapshot
+        uses: advanced-security/dependency-submission-action@v4
+        with:
+          sbom-file: sbom-github.json
+
+  # 漏洞扫描
+  vulnerability-scan:
+    name: Vulnerability Scanning
+    needs: generate-sbom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SBOM
+        uses: actions/download-artifact@v3
+        with:
+          name: sbom-${{ github.sha }}
+      
+      # Grype 漏洞扫描
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+      
+      - name: Scan with Grype
+        run: |
+          grype sbom:sbom-cyclonedx.json -o table
+          grype sbom:sbom-cyclonedx.json -o json > vulnerabilities.json
+      
+      # Trivy 漏洞扫描
+      - name: Run Trivy scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          input: sbom-cyclonedx.json
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      
+      # 上传扫描结果到 GitHub Security
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      # 生成漏洞报告
+      - name: Generate vulnerability report
+        run: |
+          echo "# 漏洞扫描报告" > vulnerability-report.md
+          echo "" >> vulnerability-report.md
+          echo "扫描时间: $(date)" >> vulnerability-report.md
+          echo "Git SHA: ${{ github.sha }}" >> vulnerability-report.md
+          echo "" >> vulnerability-report.md
+          
+          if [ -s vulnerabilities.json ]; then
+            echo "## 发现的漏洞" >> vulnerability-report.md
+            jq -r '.matches[] | "- \(.vulnerability.id) (\(.vulnerability.severity)): \(.artifact.name)@\(.artifact.version)"' vulnerabilities.json >> vulnerability-report.md
+          else
+            echo "未发现漏洞 ✅" >> vulnerability-report.md
+          fi
+      
+      - name: Upload vulnerability report
+        uses: actions/upload-artifact@v3
+        with:
+          name: vulnerability-report-${{ github.sha }}
+          path: |
+            vulnerability-report.md
+            vulnerabilities.json
+            trivy-results.sarif
+
+  # 许可证合规性检查
+  license-compliance:
+    name: License Compliance
+    needs: generate-sbom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SBOM
+        uses: actions/download-artifact@v3
+        with:
+          name: sbom-${{ github.sha }}
+      
+      - name: Check license compliance
+        run: |
+          # 安装 license-checker
+          npm install -g @cyclonedx/cdxgen license-checker
+          
+          # 生成许可证报告
+          echo "# 许可证合规性报告" > license-report.md
+          echo "" >> license-report.md
+          echo "扫描时间: $(date)" >> license-report.md
+          echo "" >> license-report.md
+          
+          # 解析 SBOM 中的许可证信息
+          jq -r '.components[] | "\(.name)@\(.version): \(.licenses[0].license.id // "Unknown")"' sbom-cyclonedx.json | sort > licenses.txt
+          
+          # 检查不兼容的许可证
+          echo "## 许可证列表" >> license-report.md
+          cat licenses.txt >> license-report.md
+          
+          # 标记可能有问题的许可证
+          echo "" >> license-report.md
+          echo "## 潜在问题" >> license-report.md
+          
+          if grep -E "(GPL|AGPL|SSPL)" licenses.txt; then
+            echo "⚠️  发现 Copyleft 许可证" >> license-report.md
+          else
+            echo "✅ 未发现 Copyleft 许可证" >> license-report.md
+          fi
+      
+      - name: Upload license report
+        uses: actions/upload-artifact@v3
+        with:
+          name: license-report-${{ github.sha }}
+          path: |
+            license-report.md
+            licenses.txt

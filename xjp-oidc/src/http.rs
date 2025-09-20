@@ -102,12 +102,19 @@ mod reqwest_impl {
     #[async_trait]
     impl HttpClient for ReqwestHttpClient {
         async fn get_value(&self, url: &str) -> Result<serde_json::Value, HttpClientError> {
+            let start = std::time::Instant::now();
             let response = self
                 .client
                 .get(url)
                 .send()
                 .await
                 .map_err(|e| {
+                    tracing::error!(
+                        target: "xjp_oidc::http",
+                        url = %url,
+                        error = %e,
+                        "HTTP GET 请求失败"
+                    );
                     if e.is_timeout() {
                         HttpClientError::Timeout
                     } else {
@@ -116,6 +123,16 @@ mod reqwest_impl {
                 })?;
 
             let status = response.status();
+            let duration = start.elapsed();
+            
+            tracing::info!(
+                target: "xjp_oidc::http",
+                url = %url,
+                method = "GET",
+                duration_ms = duration.as_millis() as u64,
+                status = status.as_u16(),
+                "HTTP 请求完成"
+            );
             if !status.is_success() {
                 let message = response
                     .text()

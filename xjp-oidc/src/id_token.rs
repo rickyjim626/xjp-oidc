@@ -42,13 +42,26 @@ const DEFAULT_JWKS_CACHE_TTL: u64 = 600;
 /// # Ok(())
 /// # }
 /// ```
+#[tracing::instrument(
+    name = "verify_id_token",
+    skip(id_token, opts),
+    fields(
+        issuer = %opts.issuer,
+        audience = %opts.audience,
+        has_nonce = opts.nonce.is_some(),
+    )
+)]
 pub async fn verify_id_token(
     id_token: &str,
     opts: VerifyOptions<'_>,
 ) -> Result<VerifiedIdToken> {
+    tracing::debug!(target: "xjp_oidc::token", "开始验证 ID Token");
+    
     // Extract kid from token header
     let kid = extract_kid(id_token)?
         .ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
+    
+    tracing::trace!(target: "xjp_oidc::token", kid = %kid, "提取 kid 成功");
 
     // Discover metadata and get JWKS
     // Use NoOpCache for metadata discovery - JWKS are the important thing to cache

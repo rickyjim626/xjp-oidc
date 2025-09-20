@@ -1,0 +1,44 @@
+[package]
+name = "auth-bff"
+version = "1.0.0"
+edition = "2021"
+authors = ["XiaojinPro Team"]
+description = "Ultra-thin Auth BFF service using xjp-oidc"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tokio = { version = "1.38", features = ["full"] }
+
+# OIDC/OAuth2
+xjp-oidc = "1.0.0-rc.1"
+
+# Session management
+tower-sessions = "0.13"
+tower-sessions-memory-store = "0.13"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+uuid = { version = "1.10", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+
+[[bin]]
+name = "auth-bff"
+path = "src/main.rs"

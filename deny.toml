@@ -1,0 +1,90 @@
+# cargo-deny 配置
+# 更多信息: https://github.com/EmbarkStudios/cargo-deny
+
+# 如果为 true，则所有警告都被视为错误
+all-features = true
+
+[licenses]
+# 允许的许可证列表
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+]
+
+# 拒绝的许可证列表
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+
+# Copyleft 许可证需要特别注意
+copyleft = "warn"
+
+# 对于没有许可证的 crate 的处理
+unlicensed = "deny"
+
+# 置信度阈值
+confidence-threshold = 0.8
+
+# 例外规则
+[[licenses.exceptions]]
+# ring 使用混合许可证
+name = "ring"
+allow = ["MIT", "ISC", "OpenSSL"]
+
+[bans]
+# 禁止多个版本的同一个 crate
+multiple-versions = "warn"
+# 禁止使用通配符依赖
+wildcards = "deny"
+# 高亮显示具有多个版本的 crate
+highlight = "all"
+
+# 允许的重复 crate
+skip = [
+    # 这些 crate 经常有多个版本
+    { name = "windows-sys" },
+    { name = "windows-targets" },
+]
+
+# 拒绝特定的 crate
+deny = [
+    # 已知有安全问题的 crate
+    { name = "openssl", version = "<0.10" },
+]
+
+[advisories]
+# advisories 数据库
+db-path = "~/.cargo/advisory-db"
+# advisories 数据库 URL
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# 漏洞级别
+vulnerability = "deny"
+# 未维护的 crate
+unmaintained = "warn"
+# 安全通知
+unsound = "warn"
+# 已撤回的版本
+yanked = "warn"
+# 通知但被忽略的 ID
+ignore = [
+    # 示例: "RUSTSEC-2020-0001",
+]
+
+[sources]
+# 允许的注册表
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# 允许的 Git 仓库
+allow-git = []
+
+# 对于组织内部的私有仓库
+[sources.allow-org]
+# github = ["your-org"]

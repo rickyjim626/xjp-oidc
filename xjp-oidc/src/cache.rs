@@ -18,6 +18,7 @@ pub trait Cache<K, V>: Send + Sync {
 }
 
 /// No-op cache implementation (always returns None)
+#[derive(Clone)]
 pub struct NoOpCache;
 
 impl<K, V> Cache<K, V> for NoOpCache {
@@ -58,19 +59,31 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> LruCacheImpl<K, V> {
 }
 
 #[cfg(feature = "lru")]
-impl<K: std::hash::Hash + Eq + Clone + Send + Sync, V: Clone + Send + Sync> Cache<K, V>
+impl<K: std::hash::Hash + Eq + Clone + Send + Sync + std::fmt::Display, V: Clone + Send + Sync> Cache<K, V>
     for LruCacheImpl<K, V>
 {
     fn get(&self, key: &K) -> Option<V> {
         let mut inner = self.inner.lock().unwrap();
-        if let Some((value, expires_at)) = inner.cache.get(key) {
+        let result = if let Some((value, expires_at)) = inner.cache.get(key) {
             if Instant::now() < *expires_at {
-                return Some(value.clone());
+                Some(value.clone())
             } else {
                 inner.cache.pop(key);
+                None
             }
-        }
-        None
+        } else {
+            None
+        };
+        
+        tracing::debug!(
+            target: "xjp_oidc::cache",
+            cache_key = %key,
+            cache_hit = result.is_some(),
+            cache_type = "lru",
+            "缓存查询"
+        );
+        
+        result
     }
     
     fn put(&self, key: K, value: V, ttl_secs: u64) {

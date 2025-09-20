@@ -1,4 +1,48 @@
-# Security Best Practices for xjp-oidc
+# Security Policy and Best Practices for xjp-oidc
+
+## Supported Versions
+
+Currently supported versions:
+
+| Version | Support Status |
+| ------- | ------------- |
+| 1.0.x   | :white_check_mark: Active support |
+| < 1.0   | :x: Not supported |
+
+## Reporting Vulnerabilities
+
+We take security issues seriously. If you discover a security vulnerability, please follow these steps:
+
+1. **Do not disclose publicly**: Do not report security vulnerabilities in public issues
+2. **Send email**: Send details to security@xiaojinpro.com
+3. **Include information**:
+   - Vulnerability description
+   - Reproduction steps
+   - Impact scope
+   - Possible fix suggestions
+
+### Response Time
+
+- Within 24 hours: Acknowledge receipt
+- Within 72 hours: Initial assessment and response
+- Within 7 days: Provide fix plan or mitigation measures
+
+## Security Update Process
+
+1. After receiving a report, we develop fixes privately
+2. Prepare security advisory
+3. Release fix version and security advisory simultaneously
+4. Notify all affected users
+
+## Security Audits
+
+This project undergoes regular security audits:
+
+- Dependency scanning (daily)
+- Code security review (each release)
+- Third-party security audit (annual)
+
+## Security Best Practices
 
 This document outlines security best practices and considerations when using xjp-oidc for OpenID Connect and OAuth2 authentication.
 

@@ -1,23 +1,38 @@
-# xjp-oidc
+# xjp-oidc - OpenID Connect SDK for Rust
 
-A comprehensive OIDC/OAuth2 SDK for Rust with support for both server and WASM environments.
-
-[![Crates.io](https://img.shields.io/crates/v/xjp-oidc.svg)](https://crates.io/crates/xjp-oidc)
+[![Crates.io](https://img.shields.io/crates/v/xjp-oidc)](https://crates.io/crates/xjp-oidc)
 [![Documentation](https://docs.rs/xjp-oidc/badge.svg)](https://docs.rs/xjp-oidc)
-[![CI](https://github.com/xiaojinpro/xjp-oidc/workflows/CI/badge.svg)](https://github.com/xiaojinpro/xjp-oidc/actions)
-[![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/xjp-oidc.svg)](LICENSE-MIT)
+[![License](https://img.shields.io/crates/l/xjp-oidc)](LICENSE)
+[![CI](https://github.com/xiaojinpro/xjp-oidc/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaojinpro/xjp-oidc/actions)
+
+A comprehensive OpenID Connect (OIDC) and OAuth 2.0 SDK for Rust, supporting both server-side and WebAssembly environments.
+
+[中文文档](README_ZH.md) | English
 
 ## Features
 
-- 🔐 **Authorization Code Flow with PKCE**: Full support for the most secure OAuth2 flow
-- 🌐 **OIDC Discovery**: Automatic endpoint discovery with caching
-- 🔑 **JWKS Caching**: Efficient key rotation handling
-- ✅ **ID Token Verification**: Comprehensive claim validation including `amr`, `xjp_admin`, and `auth_time`
-- 📝 **Dynamic Client Registration** (DCR): Server-side client registration support
-- 🚪 **RP-Initiated Logout**: Clean session termination
-- 🛡️ **Resource Server Verification**: JWT access token validation for APIs
-- 🔌 **Axum Integration**: Optional middleware and extractors for Axum web framework
-- 🌍 **Multi-Platform**: Works on both server (native) and browser (WASM)
+- 🔐 **Complete OAuth2/OIDC Implementation**
+  - Authorization Code Flow with PKCE
+  - OIDC Discovery
+  - JWKS Caching
+  - ID Token Verification
+  - Custom Claims Support
+
+- 🌍 **Multi-Platform Support**
+  - Native Rust (Linux, macOS, Windows)
+  - WebAssembly (Browser)
+  - Conditional Compilation
+
+- 🚀 **Production Ready**
+  - Enterprise Features (DCR, RP-Initiated Logout)
+  - JWT Access Token Verification
+  - Multi-Issuer Support
+  - Comprehensive Error Handling
+
+- 🔧 **Framework Integration**
+  - Axum Middleware and Extractors
+  - Tower Service Compatible
+  - Type-Safe Claim Extraction
 
 ## Quick Start
 
@@ -25,89 +40,130 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-xjp-oidc = "1.0"
+xjp-oidc = "1.0.0-rc.1"
 
 # For Axum integration
-xjp-oidc-axum = "1.0"
+xjp-oidc-axum = "1.0.0-rc.1"
 ```
 
-### Server-side Usage
+Basic usage:
 
 ```rust
-use xjp_oidc::prelude::*;
+use xjp_oidc::{create_pkce, build_auth_url, exchange_code, verify_id_token};
+use xjp_oidc::types::{BuildAuthUrl, ExchangeCode, VerifyOptions};
 
-// Create PKCE challenge
+// 1. Create PKCE challenge
 let (verifier, challenge, _) = create_pkce()?;
 
-// Build authorization URL
+// 2. Build authorization URL
 let auth_url = build_auth_url(BuildAuthUrl {
     issuer: "https://auth.example.com".into(),
-    client_id: "my-client".into(),
+    client_id: "your-client-id".into(),
     redirect_uri: "https://app.example.com/callback".into(),
     scope: "openid profile email".into(),
     code_challenge: challenge,
     ..Default::default()
 })?;
 
-// After user authorization, exchange code for tokens
-let tokens = exchange_code(ExchangeCode {
-    issuer: "https://auth.example.com".into(),
-    client_id: "my-client".into(),
-    code: "auth_code_from_callback".into(),
-    redirect_uri: "https://app.example.com/callback".into(),
-    code_verifier: verifier,
-    client_secret: None,
-}, &http_client).await?;
+// 3. After callback, exchange code for tokens
+let tokens = exchange_code(params, &http_client).await?;
 
-// Verify ID token
-let claims = verify_id_token(&tokens.id_token, VerifyOptions {
-    issuer: "https://auth.example.com",
-    audience: "my-client",
-    http: &http_client,
-    cache: &cache,
-    ..Default::default()
-}).await?;
+// 4. Verify ID token
+let verified = verify_id_token(&tokens.id_token, options).await?;
 ```
 
-### Browser (WASM) Usage
+## Examples
 
-For browser environments, only URL building and callback parsing are available:
+The repository includes several comprehensive examples:
 
-```rust
-// Build authorization URL
-let auth_url = build_auth_url(...)?;
+### Auth BFF Service
+A production-ready authentication backend service:
 
-// Parse callback
-let params = parse_callback_params(&window.location.href)?;
+```bash
+cd auth-bff
+cargo run
 ```
 
-## Axum Integration
+### Resource Server
+JWT-protected API example:
 
-```rust
-use xjp_oidc_axum::{OidcLayer, AdminGuard};
-
-let verifier = JwtVerifier::new(...);
-
-let app = Router::new()
-    .route("/api/data", get(handler))
-    .layer(OidcLayer::new(verifier))
-    .route("/admin", post(admin_handler))
-    .route_layer(AdminGuard::new());
+```bash
+cd examples/resource-server
+cargo run
 ```
 
-## MSRV
+### DCR Tool
+Dynamic Client Registration CLI:
 
-The Minimum Supported Rust Version is 1.75.0.
+```bash
+cd examples/dcr-registration
+cargo run -- register
+```
+
+## Documentation
+
+- [Getting Started Guide](GETTING_STARTED.md) - Quick introduction and setup
+- [API Reference](https://docs.rs/xjp-oidc) - Complete API documentation
+- [Security Best Practices](SECURITY.md) - Security guidelines
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
+
+## Platform Support
+
+| Platform | Features | Status |
+|----------|----------|---------|
+| Linux x86_64 | Full | ✅ Supported |
+| macOS (Intel/ARM) | Full | ✅ Supported |
+| Windows | Full | ✅ Supported |
+| WebAssembly | Core | ✅ Supported |
+
+## Security
+
+Security is our top priority. Please see [SECURITY.md](SECURITY.md) for:
+
+- Vulnerability reporting process
+- Security best practices
+- Update policy
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+- Code of conduct
+- Development setup
+- Submission guidelines
 
 ## License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
 
-## Contributing
+## Project Structure
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+```
+xjp-oidc/
+├── xjp-oidc/           # Core SDK
+├── xjp-oidc-axum/      # Axum integration
+├── auth-bff/           # Auth BFF service example
+├── examples/
+│   ├── resource-server/  # Resource server example
+│   └── dcr-registration/ # DCR CLI tool
+└── docs/               # Documentation
+```
+
+## Minimum Supported Rust Version
+
+MSRV: 1.82
+
+## Support
+
+- GitHub Issues: [Report bugs](https://github.com/xiaojinpro/xjp-oidc/issues)
+- Discussions: [Ask questions](https://github.com/xiaojinpro/xjp-oidc/discussions)
+- Security: security@xiaojinpro.com
+
+---
+
+Built with ❤️ by the XiaojinPro team

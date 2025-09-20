@@ -27,11 +27,18 @@ const DEFAULT_DISCOVERY_CACHE_TTL: u64 = 600;
 /// # Ok(())
 /// # }
 /// ```
+#[tracing::instrument(
+    name = "oidc_discover",
+    skip(http, cache),
+    fields(issuer = %issuer)
+)]
 pub async fn discover(
     issuer: &str,
     http: &dyn HttpClient,
     cache: &dyn Cache<String, OidcProviderMetadata>,
 ) -> Result<OidcProviderMetadata> {
+    tracing::info!(target: "xjp_oidc::discovery", "开始 OIDC 发现");
+    
     // Validate issuer URL
     if issuer.is_empty() {
         return Err(Error::InvalidParam("issuer cannot be empty"));

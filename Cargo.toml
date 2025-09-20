@@ -1,5 +1,5 @@
 [workspace]
-members = ["xjp-oidc", "xjp-oidc-axum"]
+members = ["xjp-oidc", "xjp-oidc-axum", "auth-bff", "examples/resource-server", "examples/dcr-registration"]
 resolver = "2"
 
 [workspace.package]

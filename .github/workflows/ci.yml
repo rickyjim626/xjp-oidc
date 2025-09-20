@@ -2,187 +2,144 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main]
+    branches: [ main, develop ]
+  schedule:
+    # 每周一早上运行，检查依赖更新
+    - cron: '0 0 * * 1'
 
 env:
   RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test - ${{ matrix.os }} - Rust ${{ matrix.rust }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-        rust:
-          - stable
-          - beta
-          - 1.82.0  # MSRV
-        features:
-          - default
-          - http-reqwest,moka,lru,verifier,tracing
-          - http-wasm,browser-min
-        exclude:
-          # WASM tests only on stable Linux
-          - features: http-wasm,browser-min
-            os: windows-latest
-          - features: http-wasm,browser-min
-            os: macos-latest
-          - features: http-wasm,browser-min
-            rust: beta
-          - features: http-wasm,browser-min
-            rust: 1.82.0
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --features "${{ matrix.features }}" -- -D warnings
-
-      - name: Build
-        run: cargo build --workspace --features "${{ matrix.features }}"
-
-      - name: Test
-        run: cargo test --workspace --features "${{ matrix.features }}"
-
-      - name: Doc
-        run: cargo doc --workspace --features "${{ matrix.features }}" --no-deps
-
-  wasm:
-    name: WASM Build & Test
+  # 格式检查
+  fmt:
+    name: Format Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+  # 代码检查
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # 多平台测试矩阵
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+        include:
+          # MSRV (Minimum Supported Rust Version)
+          - os: ubuntu-latest
+            rust: "1.82"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --all-features --verbose
+      - name: Run doc tests
+        run: cargo test --doc --all-features
+
+  # WASM 构建测试
+  wasm:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
+      - uses: Swatinem/rust-cache@v2
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
       - name: Build WASM
         run: |
           cd xjp-oidc
-          cargo build --target wasm32-unknown-unknown --no-default-features --features http-wasm,browser-min
-
+          cargo build --target wasm32-unknown-unknown --no-default-features --features wasm
       - name: Test with wasm-pack
         run: |
           cd xjp-oidc
-          wasm-pack test --headless --firefox --chrome --features http-wasm,browser-min
+          wasm-pack test --node --no-default-features --features wasm
 
-  examples:
-    name: Build Examples
+  # 文档生成
+  docs:
+    name: Documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build all examples
+  # 示例编译
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build examples
         run: |
           cargo build --example axum-bff
           cargo build --example axum-guard
           cargo build --example cli-discover
+      - name: Build auth-bff
+        run: cargo build -p auth-bff
+      - name: Build resource-server
+        run: cargo build -p resource-server
+      - name: Build dcr tool
+        run: cargo build -p dcr-registration
 
+  # 代码覆盖率
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Generate coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Run coverage
+        run: cargo tarpaulin --all-features --workspace --timeout 120 --out Xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          files: lcov.info
-          fail_ci_if_error: false
+          files: ./cobertura.xml
+          fail_ci_if_error: true
 
-  security-audit:
-    name: Security Audit
+  # 发布前检查（仅在标签推送时运行）
+  publish-check:
+    name: Publish Check
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
-      - name: Run audit
-        run: cargo audit
-
-  semver:
-    name: Semver Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-semver-checks
-        run: cargo install cargo-semver-checks
-
-      - name: Run semver checks
-        run: cargo semver-checks check-release
-
-  msrv:
-    name: Minimum Supported Rust Version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install MSRV Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.82.0  # From rust-version in Cargo.toml
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check MSRV
-        run: |
-          cargo build --workspace
-          cargo test --workspace
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --dry-run -p xjp-oidc
+      - run: cargo publish --dry-run -p xjp-oidc-axum

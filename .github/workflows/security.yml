@@ -1,0 +1,131 @@
+name: Security
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # 每天凌晨运行安全扫描
+    - cron: '0 0 * * *'
+
+jobs:
+  # 依赖审计
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # 许可证检查
+  license:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-license
+        run: cargo install cargo-license
+      - name: Check licenses
+        run: |
+          cargo license --json > licenses.json
+          # 检查是否有不兼容的许可证
+          python3 -c "
+          import json
+          with open('licenses.json') as f:
+              licenses = json.load(f)
+          
+          # 允许的许可证列表
+          allowed = ['MIT', 'Apache-2.0', 'Apache-2.0 OR MIT', 'MIT OR Apache-2.0', 
+                     'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'CC0-1.0', 'Unlicense']
+          
+          for pkg in licenses:
+              license = pkg.get('license', 'Unknown')
+              if license not in allowed:
+                  print(f'警告: {pkg[\"name\"]} 使用了 {license} 许可证')
+          "
+
+  # Cargo deny 检查
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          log-level: warn
+          command: check
+          arguments: --all-features
+
+  # SARIF 上传（用于 GitHub 安全标签页）
+  sarif:
+    name: Upload SARIF
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install sarif tools
+        run: cargo install clippy-sarif sarif-fmt
+      - name: Run clippy
+        run: |
+          cargo clippy --all-features --message-format=json | \
+          clippy-sarif | \
+          tee clippy-results.sarif | \
+          sarif-fmt
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: clippy-results.sarif
+
+  # 供应链安全
+  supply-chain:
+    name: Supply Chain Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  # 依赖更新检查
+  outdated:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check outdated
+        run: |
+          cargo install cargo-outdated
+          cargo outdated --exit-code 1 || true
+
+  # 安全策略验证
+  security-policy:
+    name: Security Policy Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SECURITY.md exists
+        run: |
+          if [ ! -f "SECURITY.md" ]; then
+            echo "错误: 缺少 SECURITY.md 文件"
+            exit 1
+          fi
+      - name: Validate security contacts
+        run: |
+          # 检查是否配置了安全联系人
+          grep -q "security@" SECURITY.md || echo "警告: 未找到安全联系邮箱"
