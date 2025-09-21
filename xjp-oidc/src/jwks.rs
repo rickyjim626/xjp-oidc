@@ -12,8 +12,9 @@ pub struct Jwk {
     /// Key use (e.g., "sig", "enc")
     #[serde(rename = "use")]
     pub use_: String,
-    /// Algorithm (e.g., "RS256")
-    pub alg: String,
+    /// Algorithm (e.g., "RS256") - optional as per JWT spec
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alg: Option<String>,
     /// RSA modulus (for RSA keys)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub n: Option<String>,
@@ -46,7 +47,7 @@ impl Jwks {
 
     /// Find keys by algorithm
     pub fn find_keys_by_alg(&self, alg: &str) -> Vec<&Jwk> {
-        self.keys.iter().filter(|k| k.alg == alg).collect()
+        self.keys.iter().filter(|k| k.alg.as_deref() == Some(alg)).collect()
     }
 
     /// Find keys by use

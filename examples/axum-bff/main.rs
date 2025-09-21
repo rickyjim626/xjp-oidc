@@ -75,7 +75,7 @@ async fn login(State(st): State<AppState>) -> Redirect {
     std::fs::write("/tmp/pkce_verifier", &verifier).ok();
 
     // Build authorization URL
-    let auth_url = build_auth_url(BuildAuthUrl {
+    let auth_result = build_auth_url(BuildAuthUrl {
         issuer: st.cfg.issuer.clone(),
         client_id: st.cfg.client_id.clone(),
         redirect_uri: st.cfg.redirect_uri.clone(),
@@ -86,8 +86,10 @@ async fn login(State(st): State<AppState>) -> Redirect {
         code_challenge: challenge,
         extra_params: None,
         tenant: None,
+        authorization_endpoint: None,
     })
     .expect("Failed to build auth URL");
+    let auth_url = auth_result.url;
 
     // Also save state and nonce for verification (demo only)
     std::fs::write("/tmp/oauth_state", "demo_state_12345").ok();
@@ -157,8 +159,9 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
             client_id: st.cfg.client_id.clone(),
             code,
             redirect_uri: st.cfg.redirect_uri.clone(),
-            code_verifier: verifier,
+            code_verifier: Some(verifier),
             client_secret: None, // Public client
+            token_endpoint_auth_method: None,
         },
         st.http.as_ref(),
     )
@@ -250,6 +253,7 @@ async fn logout(State(st): State<AppState>) -> Redirect {
         id_token_hint,
         post_logout_redirect_uri: Some(st.cfg.post_logout_redirect_uri.clone()),
         state: None,
+        end_session_endpoint: None,
     })
     .unwrap_or_else(|_| url::Url::parse(&st.cfg.post_logout_redirect_uri).unwrap());
 

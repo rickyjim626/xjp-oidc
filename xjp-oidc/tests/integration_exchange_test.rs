@@ -68,8 +68,9 @@ async fn test_exchange_code_flow() {
         client_id: "test-client".to_string(),
         code: "test-code".to_string(),
         redirect_uri: "https://app.example.com/callback".to_string(),
-        code_verifier: "test-verifier".to_string(),
+        code_verifier: Some("test-verifier".to_string()),
         client_secret: None, // Public client
+        token_endpoint_auth_method: None,
     };
 
     let result = exchange_code(params, &http_client).await;
@@ -152,8 +153,9 @@ async fn test_exchange_code_with_client_secret() {
         client_id: "confidential-client".to_string(),
         code: "auth-code-123".to_string(),
         redirect_uri: "https://app.example.com/callback".to_string(),
-        code_verifier: "verifier123".to_string(),
+        code_verifier: Some("verifier123".to_string()),
         client_secret: Some("super-secret".to_string()),
+        token_endpoint_auth_method: None,
     };
 
     let result = exchange_code(params, &http_client).await;
@@ -215,8 +217,9 @@ async fn test_exchange_code_error_handling() {
         client_id: "test-client".to_string(),
         code: "expired-code".to_string(),
         redirect_uri: "https://app.example.com/callback".to_string(),
-        code_verifier: "test-verifier".to_string(),
+        code_verifier: Some("test-verifier".to_string()),
         client_secret: None,
+        token_endpoint_auth_method: None,
     };
 
     let result = exchange_code(params, &http_client).await;

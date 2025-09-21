@@ -10,7 +10,7 @@ use crate::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use josekit::{
-    jws::RS256,
+    jws::{RS256, RS384, RS512, ES256, ES384},
     jwt::{self, JwtPayload},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -129,15 +129,51 @@ fn verify_token_signature(token: &str, jwk: &Jwk) -> Result<JwtPayload> {
     let key = josekit::jwk::Jwk::from_map(serde_json::to_value(jwk)?.as_object().unwrap().clone())
         .map_err(|e| Error::Jwt(format!("Invalid JWK: {}", e)))?;
 
-    // Verify based on algorithm
-    let verifier = match jwk.alg.as_str() {
-        "RS256" => RS256.verifier_from_jwk(&key),
-        alg => return Err(Error::Jwt(format!("Unsupported algorithm: {}", alg))),
-    }
-    .map_err(|e| Error::Jwt(format!("Failed to create verifier: {}", e)))?;
+    // Determine algorithm from JWK or default based on key type
+    let alg = jwk.alg.as_deref().or_else(|| {
+        // If alg is not specified, infer from key type
+        match jwk.kty.as_str() {
+            "RSA" => Some("RS256"),  // Default to RS256 for RSA keys
+            "EC" => Some("ES256"),   // Default to ES256 for EC keys
+            _ => None
+        }
+    });
 
-    let (payload, _header) = jwt::decode_with_verifier(token, &verifier)
-        .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?;
+    // Verify based on algorithm using dynamic dispatch
+    let (payload, _header) = match alg {
+        Some("RS256") => {
+            let verifier = RS256.verifier_from_jwk(&key)
+                .map_err(|e| Error::Jwt(format!("Failed to create RS256 verifier: {}", e)))?;
+            jwt::decode_with_verifier(token, &verifier)
+                .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?
+        },
+        Some("RS384") => {
+            let verifier = RS384.verifier_from_jwk(&key)
+                .map_err(|e| Error::Jwt(format!("Failed to create RS384 verifier: {}", e)))?;
+            jwt::decode_with_verifier(token, &verifier)
+                .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?
+        },
+        Some("RS512") => {
+            let verifier = RS512.verifier_from_jwk(&key)
+                .map_err(|e| Error::Jwt(format!("Failed to create RS512 verifier: {}", e)))?;
+            jwt::decode_with_verifier(token, &verifier)
+                .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?
+        },
+        Some("ES256") => {
+            let verifier = ES256.verifier_from_jwk(&key)
+                .map_err(|e| Error::Jwt(format!("Failed to create ES256 verifier: {}", e)))?;
+            jwt::decode_with_verifier(token, &verifier)
+                .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?
+        },
+        Some("ES384") => {
+            let verifier = ES384.verifier_from_jwk(&key)
+                .map_err(|e| Error::Jwt(format!("Failed to create ES384 verifier: {}", e)))?;
+            jwt::decode_with_verifier(token, &verifier)
+                .map_err(|e| Error::Jwt(format!("Token verification failed: {}", e)))?
+        },
+        Some(alg) => return Err(Error::Jwt(format!("Unsupported algorithm: {}", alg))),
+        None => return Err(Error::Jwt("Algorithm not specified and could not be inferred".into())),
+    };
 
     Ok(payload)
 }

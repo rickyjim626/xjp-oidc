@@ -143,7 +143,7 @@ async fn main() {
                                 println!("\nKey #{}:", i + 1);
                                 println!("  Key ID (kid): {}", key.kid);
                                 println!("  Key Type (kty): {}", key.kty);
-                                println!("  Algorithm (alg): {}", key.alg);
+                                println!("  Algorithm (alg): {}", key.alg.as_deref().unwrap_or("not specified"));
                                 println!("  Use: {}", key.use_);
 
                                 if key.kty == "RSA" {

@@ -7,7 +7,7 @@ fn create_test_jwks() -> Jwks {
                 kty: "RSA".to_string(),
                 use_: "sig".to_string(),
                 kid: "test-key-1".to_string(),
-                alg: "RS256".to_string(),
+                alg: Some("RS256".to_string()),
                 n: Some("xjlCRBqkOL9XqJ_zZUXUWmr9TKsA6bmOKe8QVSG4H6tSM96WOn3sQE8RGCy7X0VVolmDpYSfnU5IM7KlJPXKjJUGKiWifUQU7QWdqhPXPq3z7oqPPtUk8hCKwqJbFgCrq3dcpTSDu38P8hcPbsCdOcxAi5CXZ2ilc0n9Na7YI_MYSHHMaVhIjgOzFCNH_pL1Eb8CQFGE79cG_rHDFBtKJIaSc7MfqBGU_uqB4BQYK3t5Y5nQh4zVkLgNoqJivr0GEXLP3Y5C2jw9PfZHZkgkc3IOjHa6hJrtn4JZYWUG4vOynk7TorEoFw6B8Zp9kEqgk8LnOzLVCB3waw6B9Q".to_string()),
                 e: Some("AQAB".to_string()),
                 x: None,
@@ -18,7 +18,7 @@ fn create_test_jwks() -> Jwks {
                 kty: "RSA".to_string(),
                 use_: "sig".to_string(),
                 kid: "test-key-2".to_string(),
-                alg: "RS256".to_string(),
+                alg: Some("RS256".to_string()),
                 n: Some("yGOr-H0A7KYqFcGNEXkzEM4vZkqPFJnGLPKi5TxsUZdaQr1c0BaXdGOyh0ZH_XKBqFrUTHgJ8Oh6kbqM06km74W3Jvbp-LxCC4goWaQU3eZKcX3xdiVVmj_6fHH2PjNPU-HzmS8SGCWhPvh1fN2CG9_4aVWJZxr95iGBD8Mhpwf9gQ5rZqfXdTWiAMGIxp6YP-49NiYWq8BAgl7NFT4DEqQPh_x1Kkqnt3hEF6x2qFP38eCGui6PxjWR3dVMw1dKiKpN-SdFxQ1YBmt8ProNQpXnPNGco0-Le6xA76B_Nk8X3mnUjr39x-G3LH9cdTLoDPBav-HSpCUtyBvkzw".to_string()),
                 e: Some("AQAB".to_string()),
                 x: None,
@@ -60,7 +60,7 @@ async fn test_fetch_jwks_basic() {
     let key1 = &fetched.keys[0];
     assert_eq!(key1.kty, "RSA");
     assert_eq!(key1.kid, "test-key-1");
-    assert_eq!(key1.alg, "RS256");
+    assert_eq!(key1.alg, Some("RS256".to_string()));
     assert_eq!(key1.use_, "sig");
 
     let key2 = &fetched.keys[1];
@@ -164,7 +164,7 @@ async fn test_fetch_jwks_with_various_key_types() {
                 kty: "RSA".to_string(),
                 use_: "sig".to_string(),
                 kid: "rsa-key".to_string(),
-                alg: "RS256".to_string(),
+                alg: Some("RS256".to_string()),
                 n: Some("test-n".to_string()),
                 e: Some("AQAB".to_string()),
                 x: None,
@@ -176,7 +176,7 @@ async fn test_fetch_jwks_with_various_key_types() {
                 kty: "EC".to_string(),
                 use_: "sig".to_string(),
                 kid: "ec-key".to_string(),
-                alg: "ES256".to_string(),
+                alg: Some("ES256".to_string()),
                 n: None,
                 e: None,
                 x: Some("test-x".to_string()),

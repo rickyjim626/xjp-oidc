@@ -107,7 +107,7 @@ impl<K: std::hash::Hash + Eq + Clone + Send + Sync + std::fmt::Display, V: Clone
 #[cfg(all(not(target_arch = "wasm32"), feature = "moka"))]
 #[derive(Clone)]
 pub struct MokaCacheImpl<K: std::hash::Hash + Eq + Clone + Send + Sync, V: Clone + Send + Sync> {
-    cache: moka::future::Cache<K, V>,
+    cache: moka::future::Cache<K, (V, Option<std::time::Instant>)>,
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "moka"))]
@@ -147,33 +147,48 @@ impl<K: std::hash::Hash + Eq + Clone + Send + Sync + 'static, V: Clone + Send + 
     fn get(&self, key: &K) -> Option<V> {
         // Note: This blocks on async operation, which is not ideal
         // Consider making Cache trait async in future versions
-        futures::executor::block_on(async { self.cache.get(key).await })
+        futures::executor::block_on(async {
+            if let Some((value, expiry)) = self.cache.get(key).await {
+                // Check if the entry has expired
+                if let Some(exp_time) = expiry {
+                    if std::time::Instant::now() > exp_time {
+                        // Entry has expired, remove it and return None
+                        self.cache.invalidate(key).await;
+                        return None;
+                    }
+                }
+                Some(value)
+            } else {
+                None
+            }
+        })
     }
 
     fn put(&self, key: K, value: V, ttl_secs: u64) {
         // Note: This blocks on async operation, which is not ideal
         // Consider making Cache trait async in future versions
         futures::executor::block_on(async {
-            // TODO: Moka 0.12 doesn't support per-entry TTL directly.
-            // The TTL must be configured at cache creation time.
-            // For now, we ignore the ttl_secs parameter for individual entries.
-            // Consider upgrading to a newer version or using a different approach.
-            if ttl_secs > 0 {
-                // Log warning or consider alternative implementation
-                // For now, just insert with the cache's global TTL settings
-                self.cache.insert(key, value).await;
+            // Calculate expiry time based on ttl_secs
+            let expiry = if ttl_secs > 0 {
+                Some(std::time::Instant::now() + Duration::from_secs(ttl_secs))
             } else {
-                // No TTL specified, use default cache behavior
-                self.cache.insert(key, value).await;
-            }
+                None // No expiry
+            };
+
+            // Store value with its expiry time
+            self.cache.insert(key, (value, expiry)).await;
         });
     }
 
     fn remove(&self, key: &K) -> Option<V> {
-        futures::executor::block_on(async { self.cache.remove(key).await })
+        futures::executor::block_on(async {
+            self.cache.remove(key).await.map(|(value, _)| value)
+        })
     }
 
     fn clear(&self) {
-        self.cache.invalidate_all();
+        // Note: This blocks on async operation, which is not ideal
+        // Consider making Cache trait async in future versions
+        futures::executor::block_on(async { self.cache.invalidate_all() });
     }
 }

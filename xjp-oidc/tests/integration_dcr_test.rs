@@ -1,4 +1,4 @@
-use xjp_oidc::register_if_needed;
+use xjp_oidc::register_client;
 use xjp_oidc::types::{OidcProviderMetadata, RegisterRequest};
 
 #[tokio::test]
@@ -80,7 +80,7 @@ async fn test_register_new_client() {
         software_id: None,
     };
 
-    let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
+    let result = register_client(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_ok(), "Failed to register: {:?}", result.err());
 
     let registration = result.unwrap();
@@ -134,7 +134,7 @@ async fn test_register_no_endpoint() {
         software_id: None,
     };
 
-    let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
+    let result = register_client(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_err());
 
     let error = result.unwrap_err();
@@ -225,7 +225,7 @@ async fn test_register_with_contacts() {
         software_id: None,
     };
 
-    let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
+    let result = register_client(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_ok(), "Failed to register: {:?}", result.err());
 
     let registration = result.unwrap();
@@ -292,7 +292,7 @@ async fn test_register_error_handling() {
         software_id: None,
     };
 
-    let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
+    let result = register_client(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_err());
 
     let error = result.unwrap_err();

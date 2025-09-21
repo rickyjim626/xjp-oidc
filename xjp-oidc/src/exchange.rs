@@ -28,8 +28,9 @@ use base64::{engine::general_purpose, Engine as _};
 ///     client_id: "my-client".into(),
 ///     code: "auth_code".into(),
 ///     redirect_uri: "https://app.example.com/callback".into(),
-///     code_verifier: "pkce_verifier".into(),
+///     code_verifier: Some("pkce_verifier".into()),
 ///     client_secret: None, // For public clients
+///     token_endpoint_auth_method: None,
 /// }, &http).await?;
 /// # Ok(())
 /// # }
@@ -48,19 +49,61 @@ pub async fn exchange_code(params: ExchangeCode, http: &dyn HttpClient) -> Resul
         ("grant_type".to_string(), "authorization_code".to_string()),
         ("code".to_string(), params.code.clone()),
         ("redirect_uri".to_string(), params.redirect_uri.clone()),
-        ("code_verifier".to_string(), params.code_verifier.clone()),
     ];
 
-    // Determine authentication method
-    let auth_header = if let Some(client_secret) = &params.client_secret {
-        // Use client_secret_basic by default
-        let credentials = format!("{}:{}", params.client_id, client_secret);
-        let encoded = general_purpose::STANDARD.encode(credentials.as_bytes());
-        Some(("Authorization".to_string(), format!("Basic {}", encoded)))
-    } else {
-        // Public client - include client_id in form
-        form.push(("client_id".to_string(), params.client_id.clone()));
-        None
+    // Add PKCE verifier if provided
+    if let Some(verifier) = &params.code_verifier {
+        if !verifier.is_empty() {
+            form.push(("code_verifier".to_string(), verifier.clone()));
+        }
+    }
+
+    // Determine authentication method based on token_endpoint_auth_method
+    let auth_method = params.token_endpoint_auth_method
+        .as_deref()
+        .unwrap_or(if params.client_secret.is_some() {
+            "client_secret_basic"
+        } else {
+            "none"
+        });
+
+    let auth_header = match auth_method {
+        "client_secret_basic" => {
+            if let Some(client_secret) = &params.client_secret {
+                let credentials = format!("{}:{}", params.client_id, client_secret);
+                let encoded = general_purpose::STANDARD.encode(credentials.as_bytes());
+                Some(("Authorization".to_string(), format!("Basic {}", encoded)))
+            } else {
+                return Err(Error::InvalidParam("client_secret_basic requires client_secret"));
+            }
+        },
+        "client_secret_post" => {
+            // Add client credentials to form data
+            form.push(("client_id".to_string(), params.client_id.clone()));
+            if let Some(client_secret) = &params.client_secret {
+                form.push(("client_secret".to_string(), client_secret.clone()));
+            } else {
+                return Err(Error::InvalidParam("client_secret_post requires client_secret"));
+            }
+            None
+        },
+        "none" | "public" => {
+            // Public client - include client_id in form
+            form.push(("client_id".to_string(), params.client_id.clone()));
+            None
+        },
+        "private_key_jwt" | "client_secret_jwt" => {
+            // TODO: Implement JWT-based authentication
+            // For now, return error indicating it's not supported
+            return Err(Error::InvalidParam(
+                "JWT-based authentication methods are not yet supported"
+            ));
+        },
+        _ => {
+            return Err(Error::InvalidParam(
+                "Unknown authentication method"
+            ));
+        }
     };
 
     // Make the token request
@@ -102,8 +145,9 @@ fn validate_exchange_params(params: &ExchangeCode) -> Result<()> {
     if params.redirect_uri.is_empty() {
         return Err(Error::InvalidParam("redirect_uri cannot be empty"));
     }
-    if params.code_verifier.is_empty() {
-        return Err(Error::InvalidParam("code_verifier cannot be empty"));
+    // PKCE is required for public clients, but optional for confidential clients
+    if params.client_secret.is_none() && params.code_verifier.as_ref().map_or(true, |v| v.is_empty()) {
+        return Err(Error::InvalidParam("code_verifier is required for public clients"));
     }
     Ok(())
 }
@@ -132,8 +176,14 @@ pub async fn exchange_code_with_endpoint(
         ("grant_type".to_string(), "authorization_code".to_string()),
         ("code".to_string(), params.code.clone()),
         ("redirect_uri".to_string(), params.redirect_uri.clone()),
-        ("code_verifier".to_string(), params.code_verifier.clone()),
     ];
+
+    // Add PKCE verifier if provided
+    if let Some(verifier) = &params.code_verifier {
+        if !verifier.is_empty() {
+            form.push(("code_verifier".to_string(), verifier.clone()));
+        }
+    }
 
     // Determine authentication method
     let auth_header = if let Some(client_secret) = &params.client_secret {
@@ -205,8 +255,9 @@ mod tests {
             client_id: "test-client".into(),
             code: "auth_code".into(),
             redirect_uri: "https://app.example.com/callback".into(),
-            code_verifier: "verifier".into(),
+            code_verifier: Some("verifier".into()),
             client_secret: None,
+            token_endpoint_auth_method: None,
         };
         assert!(validate_exchange_params(&valid).is_ok());
 

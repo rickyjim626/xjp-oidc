@@ -107,6 +107,17 @@ pub struct VerifiedIdToken {
     pub xjp_admin: Option<bool>,
 }
 
+/// Result from building an authorization URL
+#[derive(Debug, Clone)]
+pub struct AuthUrlResult {
+    /// The generated authorization URL
+    pub url: url::Url,
+    /// The state parameter (either provided or generated)
+    pub state: String,
+    /// The nonce parameter (either provided or generated, if openid scope requested)
+    pub nonce: Option<String>,
+}
+
 /// Parameters for building authorization URL
 #[derive(Debug, Clone, Default)]
 pub struct BuildAuthUrl {
@@ -146,8 +157,8 @@ pub struct ExchangeCode {
     pub code: String,
     /// Redirect URI (must match the one used in authorization)
     pub redirect_uri: String,
-    /// PKCE code verifier
-    pub code_verifier: String,
+    /// PKCE code verifier (optional for confidential clients)
+    pub code_verifier: Option<String>,
     /// Client secret (for confidential clients)
     pub client_secret: Option<String>,
     /// Token endpoint authentication method from discovery metadata
@@ -166,6 +177,9 @@ pub struct EndSession {
     pub post_logout_redirect_uri: Option<String>,
     /// State parameter
     pub state: Option<String>,
+    /// End session endpoint from discovery metadata
+    /// If not provided, will use default path: issuer + "/oidc/end_session"
+    pub end_session_endpoint: Option<String>,
 }
 
 /// Callback parameters from authorization response

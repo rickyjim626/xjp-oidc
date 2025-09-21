@@ -14,12 +14,18 @@ fn test_build_auth_url_basic() {
         code_challenge: "challenge123".to_string(),
         extra_params: None,
         tenant: None,
+        authorization_endpoint: None,
     };
 
-    let url = build_auth_url(params).unwrap();
+    let result = build_auth_url(params).unwrap();
+    let url = result.url;
 
     // Parse URL and check components
     assert!(url.as_str().starts_with("https://auth.example.com/oauth/authorize"));
+
+    // Check that state and nonce are returned
+    assert_eq!(result.state, "random-state");
+    assert_eq!(result.nonce, Some("random-nonce".to_string()));
 
     // Check query parameters
     let query_pairs: Vec<(String, String)> =
@@ -72,6 +78,7 @@ fn test_build_end_session_url() {
         id_token_hint: "eyJ...".to_string(),
         post_logout_redirect_uri: Some("https://app.example.com".to_string()),
         state: Some("logout-state".to_string()),
+        end_session_endpoint: None,
     };
 
     // Note: This would need discovery mocking in a real test

@@ -22,7 +22,7 @@
 //! let (verifier, challenge, method) = create_pkce()?;
 //!
 //! // Build authorization URL
-//! let auth_url = build_auth_url(BuildAuthUrl {
+//! let auth_result = build_auth_url(BuildAuthUrl {
 //!     issuer: "https://auth.example.com".into(),
 //!     client_id: "my-client".into(),
 //!     redirect_uri: "https://app.example.com/callback".into(),
@@ -33,7 +33,10 @@
 //!     prompt: None,
 //!     extra_params: None,
 //!     tenant: None,
+//!     authorization_endpoint: None,
 //! })?;
+//! let auth_url = auth_result.url;
+//! // Save auth_result.state and auth_result.nonce for later validation
 //! # Ok(())
 //! # }
 //! ```
@@ -62,7 +65,8 @@ mod verify;
 
 // Re-export main types and functions
 pub use auth_url::{
-    build_auth_url, build_auth_url_with_metadata, build_end_session_url, parse_callback_params,
+    build_auth_url, build_auth_url_with_metadata, build_end_session_url,
+    build_end_session_url_with_discovery, parse_callback_params,
 };
 pub use cache::{Cache, NoOpCache};
 
@@ -76,7 +80,7 @@ pub use cache::MokaCacheImpl;
 pub use client::OidcClient;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use dcr::register_if_needed;
+pub use dcr::register_client;
 
 pub use discovery::discover;
 pub use errors::Error;
@@ -108,13 +112,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::{
-        build_auth_url, build_end_session_url, create_pkce, discover, parse_callback_params,
-        verify_id_token, BuildAuthUrl, CallbackParams, EndSession, Error, OidcProviderMetadata,
-        TokenResponse, VerifiedIdToken, VerifyOptions,
+        build_auth_url, build_end_session_url, build_end_session_url_with_discovery,
+        create_pkce, discover, parse_callback_params, verify_id_token, AuthUrlResult, BuildAuthUrl,
+        CallbackParams, EndSession, Error, OidcProviderMetadata, TokenResponse,
+        VerifiedIdToken, VerifyOptions,
     };
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub use crate::{exchange_code, register_if_needed, ExchangeCode, RegisterRequest};
+    pub use crate::{exchange_code, register_client, ExchangeCode, RegisterRequest};
 
     #[cfg(feature = "verifier")]
     pub use crate::{JwtVerifier, VerifiedClaims};

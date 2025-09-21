@@ -8,20 +8,23 @@ use crate::{
     types::{ClientRegistrationResult, ClientStatus, RegisterRequest},
 };
 
-/// Register a new client if needed
+/// Register a new client with the authorization server
 ///
 /// This implements OAuth 2.0 Dynamic Client Registration (RFC 7591)
 /// with support for the authorization server's approval workflow.
 ///
+/// Note: This function always attempts to register a new client.
+/// It does not check if a client already exists.
+///
 /// # Example
 /// ```no_run
 /// # #[cfg(not(target_arch = "wasm32"))]
-/// # use xjp_oidc::{register_if_needed, RegisterRequest, http::ReqwestHttpClient};
+/// # use xjp_oidc::{register_client, RegisterRequest, http::ReqwestHttpClient};
 /// # #[cfg(not(target_arch = "wasm32"))]
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let http = ReqwestHttpClient::default();
 ///
-/// let result = register_if_needed(
+/// let result = register_client(
 ///     "https://auth.example.com",
 ///     "initial_access_token",
 ///     RegisterRequest {
@@ -51,7 +54,7 @@ use crate::{
 /// # }
 /// ```
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn register_if_needed(
+pub async fn register_client(
     issuer: &str,
     initial_access_token: &str,
     req: RegisterRequest,

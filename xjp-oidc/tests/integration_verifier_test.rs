@@ -21,7 +21,7 @@ fn create_test_keypair() -> (JosekitJwk, Jwk) {
         kty: "RSA".to_string(),
         use_: "sig".to_string(),
         kid: "resource-key-1".to_string(),
-        alg: "RS256".to_string(),
+        alg: Some("RS256".to_string()),
         n: Some(jwk.parameter("n").unwrap().as_str().unwrap().to_string()),
         e: Some(jwk.parameter("e").unwrap().as_str().unwrap().to_string()),
         x: None,

@@ -2,7 +2,7 @@
 
 use crate::{
     errors::{Error, Result},
-    types::{BuildAuthUrl, CallbackParams, EndSession, OidcProviderMetadata},
+    types::{AuthUrlResult, BuildAuthUrl, CallbackParams, EndSession, OidcProviderMetadata},
 };
 use rand::{distributions::Alphanumeric, Rng};
 #[cfg(test)]
@@ -15,7 +15,7 @@ use url::Url;
 /// ```no_run
 /// use xjp_oidc::{build_auth_url, BuildAuthUrl};
 ///
-/// let url = build_auth_url(BuildAuthUrl {
+/// let result = build_auth_url(BuildAuthUrl {
 ///     issuer: "https://auth.example.com".into(),
 ///     client_id: "my-client".into(),
 ///     redirect_uri: "https://app.example.com/callback".into(),
@@ -23,8 +23,11 @@ use url::Url;
 ///     code_challenge: "challenge".into(),
 ///     ..Default::default()
 /// }).unwrap();
+/// let url = result.url;
+/// let state = result.state; // Save for CSRF validation
+/// let nonce = result.nonce; // Save for ID token validation
 /// ```
-pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
+pub fn build_auth_url(params: BuildAuthUrl) -> Result<AuthUrlResult> {
     // Validate required parameters
     if params.issuer.is_empty() {
         return Err(Error::InvalidParam("issuer cannot be empty"));
@@ -55,6 +58,15 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
 
     let mut url = Url::parse(&auth_endpoint)?;
 
+    // Prepare state and nonce outside the query scope
+    let scope = if params.scope.is_empty() { "openid profile email" } else { &params.scope };
+    let state = params.state.unwrap_or_else(generate_state);
+    let nonce = if scope.contains("openid") {
+        Some(params.nonce.unwrap_or_else(generate_nonce))
+    } else {
+        None
+    };
+
     // Add query parameters
     {
         let mut query = url.query_pairs_mut();
@@ -63,21 +75,18 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
         query.append_pair("redirect_uri", &params.redirect_uri);
 
         // Scope
-        let scope = if params.scope.is_empty() { "openid profile email" } else { &params.scope };
         query.append_pair("scope", scope);
 
-        // State (generate if not provided)
-        let state = params.state.unwrap_or_else(generate_state);
+        // State
         query.append_pair("state", &state);
 
         // PKCE
         query.append_pair("code_challenge", &params.code_challenge);
         query.append_pair("code_challenge_method", "S256");
 
-        // Nonce (generate if not provided and openid scope is requested)
-        if scope.contains("openid") {
-            let nonce = params.nonce.unwrap_or_else(generate_nonce);
-            query.append_pair("nonce", &nonce);
+        // Nonce
+        if let Some(ref nonce) = nonce {
+            query.append_pair("nonce", nonce);
         }
 
         // Prompt (optional)
@@ -98,7 +107,7 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
         }
     }
 
-    Ok(url)
+    Ok(AuthUrlResult { url, state, nonce })
 }
 
 /// Build an end session (logout) URL
@@ -112,6 +121,7 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
 ///     id_token_hint: "id_token_here".into(),
 ///     post_logout_redirect_uri: Some("https://app.example.com".into()),
 ///     state: None,
+///     end_session_endpoint: None,
 /// }).unwrap();
 /// ```
 pub fn build_end_session_url(params: EndSession) -> Result<Url> {
@@ -124,10 +134,16 @@ pub fn build_end_session_url(params: EndSession) -> Result<Url> {
     }
 
     // Build end session endpoint URL
-    let end_session_endpoint = if params.issuer.ends_with('/') {
-        format!("{}oidc/end_session", params.issuer)
+    let end_session_endpoint = if let Some(endpoint) = &params.end_session_endpoint {
+        // Use provided endpoint from discovery
+        endpoint.clone()
     } else {
-        format!("{}/oidc/end_session", params.issuer)
+        // Fall back to default path
+        if params.issuer.ends_with('/') {
+            format!("{}oidc/end_session", params.issuer)
+        } else {
+            format!("{}/oidc/end_session", params.issuer)
+        }
     };
 
     let mut url = Url::parse(&end_session_endpoint)?;
@@ -147,6 +163,40 @@ pub fn build_end_session_url(params: EndSession) -> Result<Url> {
     }
 
     Ok(url)
+}
+
+/// Build an end session URL with discovery metadata
+///
+/// This is a convenience function that automatically uses the discovered end_session_endpoint.
+///
+/// # Example
+/// ```no_run
+/// # async fn example() -> xjp_oidc::errors::Result<()> {
+/// use xjp_oidc::{build_end_session_url_with_discovery, EndSession, OidcProviderMetadata};
+///
+/// # let http_client = xjp_oidc::ReqwestHttpClient::default();
+/// # let cache = xjp_oidc::NoOpCache;
+/// let metadata = xjp_oidc::discover("https://auth.example.com", &http_client, &cache).await?;
+/// let url = build_end_session_url_with_discovery(EndSession {
+///     issuer: "https://auth.example.com".into(),
+///     id_token_hint: "id_token_here".into(),
+///     post_logout_redirect_uri: Some("https://app.example.com".into()),
+///     state: None,
+///     end_session_endpoint: None, // Will be filled from metadata
+/// }, &metadata)?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn build_end_session_url_with_discovery(
+    mut params: EndSession,
+    metadata: &OidcProviderMetadata,
+) -> Result<Url> {
+    // Use discovered endpoint if not already provided
+    if params.end_session_endpoint.is_none() {
+        params.end_session_endpoint = metadata.end_session_endpoint.clone();
+    }
+
+    build_end_session_url(params)
 }
 
 /// Parse callback parameters from the authorization response
@@ -215,8 +265,16 @@ pub fn parse_callback_params(url: &str) -> CallbackParams {
 pub fn build_auth_url_with_metadata(
     metadata: &OidcProviderMetadata,
     params: BuildAuthUrl,
-) -> Result<Url> {
+) -> Result<AuthUrlResult> {
     let mut url = Url::parse(&metadata.authorization_endpoint)?;
+
+    // Prepare state and nonce outside the query scope
+    let state = params.state.unwrap_or_else(generate_state);
+    let nonce = if params.scope.contains("openid") {
+        Some(params.nonce.unwrap_or_else(generate_nonce))
+    } else {
+        None
+    };
 
     // Add query parameters
     {
@@ -226,8 +284,7 @@ pub fn build_auth_url_with_metadata(
         query.append_pair("redirect_uri", &params.redirect_uri);
         query.append_pair("scope", &params.scope);
 
-        // State (generate if not provided)
-        let state = params.state.unwrap_or_else(generate_state);
+        // State
         query.append_pair("state", &state);
 
         // PKCE
@@ -235,9 +292,8 @@ pub fn build_auth_url_with_metadata(
         query.append_pair("code_challenge_method", "S256");
 
         // Nonce for OIDC
-        if params.scope.contains("openid") {
-            let nonce = params.nonce.unwrap_or_else(generate_nonce);
-            query.append_pair("nonce", &nonce);
+        if let Some(ref nonce) = nonce {
+            query.append_pair("nonce", nonce);
         }
 
         // Optional parameters
@@ -257,7 +313,7 @@ pub fn build_auth_url_with_metadata(
         }
     }
 
-    Ok(url)
+    Ok(AuthUrlResult { url, state, nonce })
 }
 
 /// Generate a random state parameter
@@ -276,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_build_auth_url() {
-        let url = build_auth_url(BuildAuthUrl {
+        let result = build_auth_url(BuildAuthUrl {
             issuer: "https://auth.example.com".into(),
             client_id: "test-client".into(),
             redirect_uri: "https://app.example.com/callback".into(),
@@ -287,8 +343,13 @@ mod tests {
             prompt: None,
             extra_params: None,
             tenant: None,
+            authorization_endpoint: None,
         })
         .unwrap();
+
+        let url = result.url;
+        assert_eq!(result.state, "test_state");
+        assert_eq!(result.nonce, Some("test_nonce".to_string()));
 
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
 
@@ -307,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_build_auth_url_auto_state_nonce() {
-        let url = build_auth_url(BuildAuthUrl {
+        let result = build_auth_url(BuildAuthUrl {
             issuer: "https://auth.example.com".into(),
             client_id: "test-client".into(),
             redirect_uri: "https://app.example.com/callback".into(),
@@ -318,8 +379,14 @@ mod tests {
             prompt: None,
             extra_params: None,
             tenant: None,
+            authorization_endpoint: None,
         })
         .unwrap();
+
+        let url = result.url;
+        // Check that state and nonce were generated
+        assert_eq!(result.state.len(), 32);
+        assert_eq!(result.nonce.as_ref().unwrap().len(), 32);
 
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
 
@@ -368,6 +435,7 @@ mod tests {
             id_token_hint: "test_token".into(),
             post_logout_redirect_uri: Some("https://app.example.com".into()),
             state: Some("logout_state".into()),
+            end_session_endpoint: None,
         })
         .unwrap();
 

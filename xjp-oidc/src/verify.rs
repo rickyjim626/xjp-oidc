@@ -255,8 +255,9 @@ fn verify_token_signature(token: &str, jwk: &crate::jwks::Jwk) -> Result<JwtPayl
     let key = josekit::jwk::Jwk::from_map(serde_json::to_value(jwk)?.as_object().unwrap().clone())
         .map_err(|e| Error::Jwt(format!("Invalid JWK: {}", e)))?;
 
-    // Verify based on algorithm
-    let verifier = match jwk.alg.as_str() {
+    // Verify based on algorithm (default to RS256 if not specified)
+    let alg = jwk.alg.as_deref().unwrap_or("RS256");
+    let verifier = match alg {
         "RS256" => RS256.verifier_from_jwk(&key),
         alg => return Err(Error::Jwt(format!("Unsupported algorithm: {}", alg))),
     }
