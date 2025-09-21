@@ -29,7 +29,7 @@ pub struct SessionUser {
     pub auth_methods: Vec<String>,
 }
 
-pub async fn store_auth_state(session: &Session, pkce_verifier: String) -> Result<String> {
+pub async fn store_auth_state(session: &Session, pkce_verifier: String) -> Result<(String, String)> {
     let state = Uuid::new_v4().to_string();
     let nonce = Uuid::new_v4().to_string();
 
@@ -46,7 +46,7 @@ pub async fn store_auth_state(session: &Session, pkce_verifier: String) -> Resul
         .await
         .map_err(|e| AppError::Session(format!("Failed to store PKCE verifier: {}", e)))?;
 
-    Ok(state)
+    Ok((state, nonce))
 }
 
 pub async fn get_auth_state(session: &Session) -> Result<(String, String, String)> {

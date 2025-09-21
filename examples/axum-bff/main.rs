@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc};
 use xjp_oidc::{
-    build_auth_url, build_end_session_url, create_pkce, exchange_code, parse_callback_params,
+    build_auth_url, build_end_session_url, create_pkce, discover, exchange_code, parse_callback_params,
     types::{BuildAuthUrl, EndSession, ExchangeCode, VerifyOptions},
     verify_id_token, MokaCacheImpl, ReqwestHttpClient,
 };
@@ -24,6 +24,7 @@ struct Config {
 struct AppState {
     http: Arc<ReqwestHttpClient>,
     cache: Arc<MokaCacheImpl<String, xjp_oidc::Jwks>>,
+    discovery_cache: Arc<MokaCacheImpl<String, xjp_oidc::OidcProviderMetadata>>,
     cfg: Arc<Config>,
 }
 
@@ -43,6 +44,7 @@ async fn main() {
     let state = AppState {
         http: Arc::new(ReqwestHttpClient::default()),
         cache: Arc::new(MokaCacheImpl::new(1024)),
+        discovery_cache: Arc::new(MokaCacheImpl::new(1024)),
         cfg,
     };
 
@@ -67,6 +69,11 @@ async fn home() -> &'static str {
 }
 
 async fn login(State(st): State<AppState>) -> Redirect {
+    // Discover OIDC endpoints
+    let discovery = discover(&st.cfg.issuer, st.http.as_ref(), st.discovery_cache.as_ref())
+        .await
+        .expect("Failed to discover OIDC endpoints");
+
     // Generate PKCE challenge
     let (verifier, challenge, _method) = create_pkce().expect("Failed to create PKCE");
 
@@ -86,7 +93,7 @@ async fn login(State(st): State<AppState>) -> Redirect {
         code_challenge: challenge,
         extra_params: None,
         tenant: None,
-        authorization_endpoint: None,
+        authorization_endpoint: Some(discovery.authorization_endpoint.clone()),
     })
     .expect("Failed to build auth URL");
     let auth_url = auth_result.url;

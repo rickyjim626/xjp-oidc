@@ -21,6 +21,7 @@ use url::Url;
 ///     redirect_uri: "https://app.example.com/callback".into(),
 ///     scope: "openid profile email".into(),
 ///     code_challenge: "challenge".into(),
+///     authorization_endpoint: Some("https://auth.example.com/oauth/authorize".into()),
 ///     ..Default::default()
 /// }).unwrap();
 /// let url = result.url;
@@ -43,18 +44,10 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<AuthUrlResult> {
     }
 
     // Build authorization endpoint URL
-    // Use provided authorization_endpoint if available, otherwise fallback to default path
-    let auth_endpoint = if let Some(endpoint) = params.authorization_endpoint {
-        endpoint
-    } else {
-        // Fallback to hardcoded path for backward compatibility
-        // TODO: Consider deprecating this and requiring discovery metadata
-        if params.issuer.ends_with('/') {
-            format!("{}oauth/authorize", params.issuer)
-        } else {
-            format!("{}/oauth/authorize", params.issuer)
-        }
-    };
+    // Require authorization_endpoint to be provided
+    let auth_endpoint = params
+        .authorization_endpoint
+        .ok_or_else(|| Error::InvalidParam("authorization_endpoint is required. Please use OIDC discovery to obtain the correct endpoint"))?;
 
     let mut url = Url::parse(&auth_endpoint)?;
 
@@ -343,7 +336,7 @@ mod tests {
             prompt: None,
             extra_params: None,
             tenant: None,
-            authorization_endpoint: None,
+            authorization_endpoint: Some("https://auth.example.com/oauth/authorize".into()),
         })
         .unwrap();
 
@@ -379,7 +372,7 @@ mod tests {
             prompt: None,
             extra_params: None,
             tenant: None,
-            authorization_endpoint: None,
+            authorization_endpoint: Some("https://auth.example.com/oauth/authorize".into()),
         })
         .unwrap();
 
@@ -395,6 +388,31 @@ mod tests {
         assert!(query.contains_key("nonce"));
         assert_eq!(query.get("state").unwrap().len(), 32);
         assert_eq!(query.get("nonce").unwrap().len(), 32);
+    }
+
+    #[test]
+    fn test_build_auth_url_missing_authorization_endpoint() {
+        let result = build_auth_url(BuildAuthUrl {
+            issuer: "https://auth.example.com".into(),
+            client_id: "test-client".into(),
+            redirect_uri: "https://app.example.com/callback".into(),
+            scope: "openid profile".into(),
+            code_challenge: "test_challenge".into(),
+            state: Some("test_state".into()),
+            nonce: Some("test_nonce".into()),
+            prompt: None,
+            extra_params: None,
+            tenant: None,
+            authorization_endpoint: None,
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::InvalidParam(msg)) => {
+                assert!(msg.contains("authorization_endpoint is required"));
+            }
+            _ => panic!("Expected InvalidParam error"),
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use serde_json::json;
 use tower_sessions::Session;
 
 use xjp_oidc::{
-    build_auth_url, build_end_session_url, create_pkce, discover, exchange_code,
+    build_auth_url, build_end_session_url_with_discovery, create_pkce, discover, exchange_code,
     parse_callback_params,
     types::{BuildAuthUrl, EndSession, ExchangeCode, VerifyOptions},
     verify_id_token,
@@ -42,25 +42,35 @@ pub async fn get_login_url(
     State(config): State<Config>,
     session: Session,
 ) -> Result<Json<LoginUrlResponse>> {
+    // 发现端点
+    let discovery = discover(
+        &config.oidc_issuer,
+        config.http_client.as_ref(),
+        config.discovery_cache.as_ref(),
+    )
+    .await?;
+
     // 创建 PKCE
     let (verifier, challenge, _) = create_pkce()?;
 
     // 保存状态到会话
-    let state = store_auth_state(&session, verifier).await?;
+    let (state, nonce) = store_auth_state(&session, verifier).await?;
 
-    // 构建授权 URL
+    // 构建授权 URL，使用发现的授权端点
     let auth_url = build_auth_url(BuildAuthUrl {
         issuer: config.oidc_issuer.clone(),
         client_id: config.client_id.clone(),
         redirect_uri: config.redirect_uri.clone(),
         scope: config.scopes.clone(),
         state: Some(state),
+        nonce: Some(nonce),
         code_challenge: challenge,
+        authorization_endpoint: Some(discovery.authorization_endpoint.clone()),
         ..Default::default()
     })?;
 
     Ok(Json(LoginUrlResponse {
-        auth_url: auth_url.to_string(),
+        auth_url: auth_url.url.to_string(),
     }))
 }
 
@@ -126,7 +136,8 @@ pub async fn handle_callback(
         client_secret: config.client_secret.clone(),
         redirect_uri: config.redirect_uri.clone(),
         code,
-        code_verifier: pkce_verifier,
+        code_verifier: Some(pkce_verifier),
+        token_endpoint_auth_method: None,
     };
 
     let tokens = exchange_code(token_params, config.http_client.as_ref()).await?;
@@ -232,16 +243,23 @@ pub async fn get_logout_url(
             )
             .await?;
 
-            discovery.end_session_endpoint.and_then(|_| {
-                build_end_session_url(EndSession {
-                    issuer: config.oidc_issuer.clone(),
-                    id_token_hint: tokens.id_token,
-                    post_logout_redirect_uri: Some(config.post_logout_redirect_uri.clone()),
-                    state: Some(uuid::Uuid::new_v4().to_string()),
-                })
+            // 使用 build_end_session_url_with_discovery 来正确使用发现的端点
+            if discovery.end_session_endpoint.is_some() {
+                build_end_session_url_with_discovery(
+                    EndSession {
+                        issuer: config.oidc_issuer.clone(),
+                        id_token_hint: tokens.id_token,
+                        post_logout_redirect_uri: Some(config.post_logout_redirect_uri.clone()),
+                        state: Some(uuid::Uuid::new_v4().to_string()),
+                        end_session_endpoint: None, // Will be filled from discovery
+                    },
+                    &discovery,
+                )
                 .ok()
                 .map(|url| url.to_string())
-            })
+            } else {
+                None
+            }
         }
         Err(_) => None,
     };

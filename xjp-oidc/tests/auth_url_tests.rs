@@ -14,7 +14,7 @@ fn test_build_auth_url_basic() {
         code_challenge: "challenge123".to_string(),
         extra_params: None,
         tenant: None,
-        authorization_endpoint: None,
+        authorization_endpoint: Some("https://auth.example.com/oauth/authorize".to_string()),
     };
 
     let result = build_auth_url(params).unwrap();

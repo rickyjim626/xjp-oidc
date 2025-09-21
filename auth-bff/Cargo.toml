@@ -13,7 +13,7 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 tokio = { version = "1.38", features = ["full"] }
 
 # OIDC/OAuth2
-xjp-oidc = "1.0.0-rc.1"
+xjp-oidc = { path = "../xjp-oidc" }
 
 # Session management
 tower-sessions = "0.13"

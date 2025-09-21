@@ -76,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         redirect_uri: "https://app.example.com/callback".into(),
         scope: "openid profile email".into(),
         code_challenge: "test-challenge".into(),
+        authorization_endpoint: Some("https://auth.example.com/oauth/authorize".into()),
         ..Default::default()
     })?;
     tracing::debug!("生成的授权 URL: {}", auth_url);

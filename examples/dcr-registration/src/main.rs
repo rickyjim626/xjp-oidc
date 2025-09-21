@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use xjp_oidc::{
-    discover, register_if_needed, ClientRegistrationResult, NoOpCache, RegisterRequest,
+    discover, register_client, ClientRegistrationResult, NoOpCache, RegisterRequest,
     ReqwestHttpClient,
 };
 
@@ -388,11 +388,12 @@ impl DcrTool {
         };
 
         // 执行注册
-        let response = register_if_needed(
+        let response = register_client(
             &config.issuer,
             "your-initial-access-token", // TODO: 从配置或环境变量获取
             request,
             self.http_client.as_ref(),
+            self.cache.as_ref(),
         )
         .await?;
 

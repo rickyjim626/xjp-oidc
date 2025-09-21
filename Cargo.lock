@@ -172,7 +172,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "xjp-oidc 1.0.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "xjp-oidc",
 ]
 
 [[package]]
@@ -656,7 +656,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "xjp-oidc 1.0.0-rc.1",
+ "xjp-oidc",
 ]
 
 [[package]]
@@ -2430,7 +2430,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "xjp-oidc 1.0.0-rc.1",
+ "xjp-oidc",
  "xjp-oidc-axum",
 ]
 
@@ -2892,7 +2892,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "xjp-oidc 1.0.0-rc.1",
+ "xjp-oidc",
 ]
 
 [[package]]
@@ -4049,32 +4049,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xjp-oidc"
-version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb6cbc70e3a64b9b45d6466298629dc24872d04fae85b8d85599f18558d21443"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures",
- "getrandom 0.2.16",
- "josekit",
- "lru",
- "moka",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tracing",
- "url",
- "urlencoding",
-]
-
-[[package]]
 name = "xjp-oidc-axum"
 version = "1.0.0-rc.1"
 dependencies = [
@@ -4094,7 +4068,7 @@ dependencies = [
  "tower 0.5.2",
  "tower-service",
  "tracing",
- "xjp-oidc 1.0.0-rc.1",
+ "xjp-oidc",
 ]
 
 [[package]]
