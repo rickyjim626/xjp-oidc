@@ -192,7 +192,7 @@ async fn test_pkce_flow(metadata: &OidcProviderMetadata) -> Result<(String, Stri
 
     println!();
     println!("  {} Confidential Client (xjp-web):", "Web".bold());
-    println!("  授权 URL: {}", auth_url_web.to_string().blue());
+    println!("  授权 URL: {}", auth_url_web.url.to_string().blue());
 
     // 3. 构建授权 URL (CLI Client)
     let auth_url_cli = build_auth_url_with_metadata(
@@ -214,7 +214,7 @@ async fn test_pkce_flow(metadata: &OidcProviderMetadata) -> Result<(String, Stri
 
     println!();
     println!("  {} Public Client (xjp-cli):", "CLI".bold());
-    println!("  授权 URL: {}", auth_url_cli.to_string().blue());
+    println!("  授权 URL: {}", auth_url_cli.url.to_string().blue());
 
     println!();
     println!(
@@ -222,7 +222,7 @@ async fn test_pkce_flow(metadata: &OidcProviderMetadata) -> Result<(String, Stri
         "提示:".yellow()
     );
 
-    Ok((verifier, auth_url_web.to_string(), auth_url_cli.to_string()))
+    Ok((verifier, auth_url_web.url.to_string(), auth_url_cli.url.to_string()))
 }
 
 /// 测试客户端凭据流程
@@ -283,7 +283,7 @@ async fn test_token_exchange(
         client_id: client_id.into(),
         client_secret: client_secret.map(Into::into),
         redirect_uri: redirect_uri.into(),
-        code_verifier: verifier.into(),
+        code_verifier: Some(verifier.into()),
         token_endpoint_auth_method: None,
     };
 

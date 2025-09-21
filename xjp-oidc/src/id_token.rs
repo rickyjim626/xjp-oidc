@@ -54,10 +54,14 @@ const DEFAULT_JWKS_CACHE_TTL: u64 = 600;
 pub async fn verify_id_token(id_token: &str, opts: VerifyOptions<'_>) -> Result<VerifiedIdToken> {
     tracing::debug!(target: "xjp_oidc::token", "开始验证 ID Token");
 
-    // Extract kid from token header
-    let kid = extract_kid(id_token)?.ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
+    // Extract kid from token header (optional)
+    let kid = extract_kid(id_token)?;
 
-    tracing::trace!(target: "xjp_oidc::token", kid = %kid, "提取 kid 成功");
+    if let Some(ref kid) = kid {
+        tracing::trace!(target: "xjp_oidc::token", kid = %kid, "提取 kid 成功");
+    } else {
+        tracing::debug!(target: "xjp_oidc::token", "Token 未包含 kid，将尝试所有可用密钥");
+    }
 
     // Discover metadata and get JWKS
     // Use NoOpCache for metadata discovery - JWKS are the important thing to cache
@@ -66,12 +70,34 @@ pub async fn verify_id_token(id_token: &str, opts: VerifyOptions<'_>) -> Result<
     let jwks = fetch_jwks(&metadata.jwks_uri, opts.http, opts.cache).await?;
 
     // Find the key
-    let jwk = jwks
-        .find_key(&kid)
-        .ok_or_else(|| Error::Jwt(format!("Key with kid '{}' not found", kid)))?;
+    let payload = if let Some(kid) = kid {
+        // If kid is present, find the specific key
+        let jwk = jwks
+            .find_key(&kid)
+            .ok_or_else(|| Error::Jwt(format!("Key with kid '{}' not found", kid)))?;
+        verify_token_signature(id_token, jwk)?
+    } else {
+        // If no kid, try all keys until one works
+        let mut last_error = None;
+        let mut verified_payload = None;
 
-    // Verify the token
-    let payload = verify_token_signature(id_token, jwk)?;
+        for jwk in &jwks.keys {
+            match verify_token_signature(id_token, jwk) {
+                Ok(payload) => {
+                    tracing::debug!(target: "xjp_oidc::token", "成功使用密钥验证 Token");
+                    verified_payload = Some(payload);
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        verified_payload.ok_or_else(|| {
+            last_error.unwrap_or_else(|| Error::Jwt("No matching key found in JWKS".into()))
+        })?
+    };
 
     // Extract and validate claims
     let claims = extract_and_validate_claims(payload, opts)?;

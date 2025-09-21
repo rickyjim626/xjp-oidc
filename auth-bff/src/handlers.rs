@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
@@ -18,8 +18,8 @@ use crate::{
     config::Config,
     error::{AppError, Result},
     session::{
-        clear_auth_state, clear_session, get_auth_state, get_tokens, get_user, store_auth_state,
-        store_user, SessionTokens, SessionUser,
+        clear_auth_state, clear_session, get_and_clear_logout_state, get_auth_state, get_tokens,
+        get_user, store_auth_state, store_logout_state, store_user, SessionTokens, SessionUser,
     },
 };
 
@@ -175,13 +175,18 @@ pub async fn handle_callback(
         id_token: id_token.clone(),
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
-        expires_at: Some(
-            (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + tokens.expires_in as u64) as i64,
-        ),
+        expires_at: if tokens.expires_in > 0 {
+            Some(
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64)
+                    + tokens.expires_in,
+            )
+        } else {
+            // For non-positive expires_in values, treat as no expiration
+            None
+        },
     };
 
     store_user(&session, user, session_tokens).await?;
@@ -245,12 +250,17 @@ pub async fn get_logout_url(
 
             // 使用 build_end_session_url_with_discovery 来正确使用发现的端点
             if discovery.end_session_endpoint.is_some() {
+                let state = uuid::Uuid::new_v4().to_string();
+
+                // 保存 state 到 session 以便后续验证
+                store_logout_state(&session, state.clone()).await?;
+
                 build_end_session_url_with_discovery(
                     EndSession {
                         issuer: config.oidc_issuer.clone(),
                         id_token_hint: tokens.id_token,
                         post_logout_redirect_uri: Some(config.post_logout_redirect_uri.clone()),
-                        state: Some(uuid::Uuid::new_v4().to_string()),
+                        state: Some(state),
                         end_session_endpoint: None, // Will be filled from discovery
                     },
                     &discovery,
@@ -265,4 +275,33 @@ pub async fn get_logout_url(
     };
 
     Ok(Json(LogoutUrlResponse { logout_url }))
+}
+
+// 处理登出回调
+#[derive(Debug, Deserialize)]
+pub struct PostLogoutQuery {
+    pub state: Option<String>,
+}
+
+pub async fn post_logout_callback(
+    Query(query): Query<PostLogoutQuery>,
+    session: Session,
+) -> Result<StatusCode> {
+    // 验证 state
+    if let Some(state) = query.state {
+        match get_and_clear_logout_state(&session).await {
+            Ok(stored_state) => {
+                if state != stored_state {
+                    return Err(AppError::BadRequest("Invalid logout state".to_string()));
+                }
+            }
+            Err(_) => {
+                return Err(AppError::BadRequest("No logout state in session".to_string()));
+            }
+        }
+    }
+
+    // 清除会话
+    clear_session(&session).await?;
+    Ok(StatusCode::OK)
 }

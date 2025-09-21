@@ -9,6 +9,7 @@ const SESSION_KEY_PKCE: &str = "pkce_verifier";
 const SESSION_KEY_NONCE: &str = "nonce";
 const SESSION_KEY_STATE: &str = "state";
 const SESSION_KEY_USER: &str = "user";
+const SESSION_KEY_LOGOUT_STATE: &str = "logout_state";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTokens {
@@ -120,4 +121,29 @@ pub async fn clear_session(session: &Session) -> Result<()> {
         .await
         .map_err(|e| AppError::Session(format!("Failed to clear session: {}", e)))?;
     Ok(())
+}
+
+pub async fn store_logout_state(session: &Session, state: String) -> Result<()> {
+    session
+        .insert(SESSION_KEY_LOGOUT_STATE, state)
+        .await
+        .map_err(|e| AppError::Session(format!("Failed to store logout state: {}", e)))?;
+    Ok(())
+}
+
+pub async fn get_and_clear_logout_state(session: &Session) -> Result<String> {
+    let state = session
+        .get::<String>(SESSION_KEY_LOGOUT_STATE)
+        .await
+        .map_err(|e| AppError::Session(format!("Failed to get logout state: {}", e)))?;
+
+    if let Some(state) = state {
+        session
+            .remove::<String>(SESSION_KEY_LOGOUT_STATE)
+            .await
+            .map_err(|e| AppError::Session(format!("Failed to remove logout state: {}", e)))?;
+        Ok(state)
+    } else {
+        Err(AppError::BadRequest("Missing logout state in session".to_string()))
+    }
 }

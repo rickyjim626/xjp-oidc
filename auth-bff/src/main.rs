@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/user", get(handlers::get_current_user))
         .route("/api/auth/logout", post(handlers::logout))
         .route("/api/auth/logout-url", get(handlers::get_logout_url))
+        .route("/api/auth/logout-callback", get(handlers::post_logout_callback))
         // Health check
         .route("/health", get(handlers::health_check))
         // Add state
