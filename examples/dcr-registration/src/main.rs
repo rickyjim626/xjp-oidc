@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
-use dialoguer::{theme::ColorfulTheme, Input, Select, MultiSelect, Confirm};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,9 +15,8 @@ use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use xjp_oidc::{
-    discover, register_if_needed, 
-    ReqwestHttpClient, NoOpCache,
-    RegisterRequest, ClientRegistrationResult,
+    discover, register_if_needed, ClientRegistrationResult, NoOpCache, RegisterRequest,
+    ReqwestHttpClient,
 };
 
 #[derive(Parser)]
@@ -34,31 +33,31 @@ enum Commands {
         /// OIDC 发行者 URL
         #[arg(short, long)]
         issuer: Option<String>,
-        
+
         /// 配置文件路径
         #[arg(short, long)]
         config: Option<PathBuf>,
     },
-    
+
     /// 列出已注册的客户端
     List,
-    
+
     /// 显示客户端详情
     Show {
         /// 客户端名称
         name: String,
     },
-    
+
     /// 导出客户端配置
     Export {
         /// 客户端名称
         name: String,
-        
+
         /// 输出格式 (json, toml, env)
         #[arg(short, long, default_value = "json")]
         format: String,
     },
-    
+
     /// 创建示例配置文件
     Init,
 }
@@ -131,46 +130,46 @@ struct DcrTool {
 
 impl DcrTool {
     fn new() -> Result<Self> {
-        let dirs = ProjectDirs::from("com", "xiaojinpro", "dcr-tool")
-            .context("无法确定配置目录")?;
-        
+        let dirs =
+            ProjectDirs::from("com", "xiaojinpro", "dcr-tool").context("无法确定配置目录")?;
+
         let data_dir = dirs.data_dir().to_path_buf();
         fs::create_dir_all(&data_dir)?;
-        
+
         Ok(Self {
             http_client: Arc::new(ReqwestHttpClient::default()),
             cache: Arc::new(NoOpCache),
             data_dir,
         })
     }
-    
+
     fn clients_file(&self) -> PathBuf {
         self.data_dir.join("clients.json")
     }
-    
+
     fn load_clients(&self) -> Result<HashMap<String, SavedClient>> {
         let path = self.clients_file();
         if !path.exists() {
             return Ok(HashMap::new());
         }
-        
+
         let data = fs::read_to_string(&path)?;
         Ok(serde_json::from_str(&data)?)
     }
-    
+
     fn save_clients(&self, clients: &HashMap<String, SavedClient>) -> Result<()> {
         let path = self.clients_file();
         let data = serde_json::to_string_pretty(clients)?;
         fs::write(&path, data)?;
         Ok(())
     }
-    
+
     async fn register_interactive(&self, issuer: Option<String>) -> Result<()> {
         println!("{}", "=== DCR 客户端注册向导 ===".blue().bold());
         println!();
-        
+
         let theme = ColorfulTheme::default();
-        
+
         // 基本信息
         let issuer = issuer.unwrap_or_else(|| {
             Input::with_theme(&theme)
@@ -179,7 +178,7 @@ impl DcrTool {
                 .interact_text()
                 .unwrap()
         });
-        
+
         let name = Input::<String>::with_theme(&theme)
             .with_prompt("客户端名称（本地标识）")
             .validate_with(|input: &String| {
@@ -192,12 +191,12 @@ impl DcrTool {
                 }
             })
             .interact_text()?;
-        
+
         let client_name = Input::<String>::with_theme(&theme)
             .with_prompt("应用显示名称")
             .default(name.clone())
             .interact_text()?;
-        
+
         // 应用类型
         let app_types = vec!["web", "native", "spa"];
         let app_type_idx = Select::with_theme(&theme)
@@ -206,7 +205,7 @@ impl DcrTool {
             .default(0)
             .interact()?;
         let application_type = app_types[app_type_idx].to_string();
-        
+
         // 重定向 URI
         println!("\n{}", "配置重定向 URI（至少一个）".yellow());
         let mut redirect_uris = vec![];
@@ -220,21 +219,25 @@ impl DcrTool {
                 })
                 .allow_empty(true)
                 .interact_text()?;
-            
+
             if uri.is_empty() && !redirect_uris.is_empty() {
                 break;
             } else if !uri.is_empty() {
                 redirect_uris.push(uri);
-                println!("  {} 已添加 {} 个重定向 URI", "✓".green(), redirect_uris.len());
+                println!(
+                    "  {} 已添加 {} 个重定向 URI",
+                    "✓".green(),
+                    redirect_uris.len()
+                );
             }
         }
-        
+
         // 登出重定向 URI
         let add_logout = Confirm::with_theme(&theme)
             .with_prompt("是否配置登出后重定向 URI？")
             .default(true)
             .interact()?;
-        
+
         let post_logout_redirect_uris = if add_logout {
             let mut uris = vec![];
             loop {
@@ -247,7 +250,7 @@ impl DcrTool {
                     })
                     .allow_empty(true)
                     .interact_text()?;
-                
+
                 if uri.is_empty() {
                     break;
                 } else {
@@ -258,7 +261,7 @@ impl DcrTool {
         } else {
             vec![]
         };
-        
+
         // 认证方法
         let auth_methods = vec!["none", "client_secret_basic", "client_secret_post"];
         let auth_method_idx = Select::with_theme(&theme)
@@ -267,23 +270,28 @@ impl DcrTool {
             .default(0)
             .interact()?;
         let token_endpoint_auth_method = auth_methods[auth_method_idx].to_string();
-        
+
         // 权限范围
         let scopes = vec![
-            "openid", "profile", "email", "phone", "address", "offline_access"
+            "openid",
+            "profile",
+            "email",
+            "phone",
+            "address",
+            "offline_access",
         ];
         let selected_scopes = MultiSelect::with_theme(&theme)
             .with_prompt("选择权限范围")
             .items(&scopes)
             .defaults(&[true, true, true, false, false, false])
             .interact()?;
-        
+
         let scope = selected_scopes
             .iter()
             .map(|&idx| scopes[idx])
             .collect::<Vec<_>>()
             .join(" ");
-        
+
         // 联系人
         let contact_email = Input::<String>::with_theme(&theme)
             .with_prompt("联系人邮箱")
@@ -295,18 +303,18 @@ impl DcrTool {
                 }
             })
             .interact_text()?;
-        
+
         // 可选 URI
         let client_uri = Input::<String>::with_theme(&theme)
             .with_prompt("客户端主页 URL（可选）")
             .allow_empty(true)
             .interact_text()?;
-        
+
         let logo_uri = Input::<String>::with_theme(&theme)
             .with_prompt("Logo URL（可选）")
             .allow_empty(true)
             .interact_text()?;
-        
+
         // 构建配置
         let config = ClientConfig {
             name,
@@ -319,43 +327,53 @@ impl DcrTool {
             scope,
             contacts: vec![contact_email],
             client_name,
-            logo_uri: if logo_uri.is_empty() { None } else { Some(logo_uri) },
-            client_uri: if client_uri.is_empty() { None } else { Some(client_uri) },
+            logo_uri: if logo_uri.is_empty() {
+                None
+            } else {
+                Some(logo_uri)
+            },
+            client_uri: if client_uri.is_empty() {
+                None
+            } else {
+                Some(client_uri)
+            },
             tos_uri: None,
             policy_uri: None,
         };
-        
+
         // 显示配置
         println!("\n{}", "=== 注册配置预览 ===".cyan().bold());
         println!("{}", serde_json::to_string_pretty(&config)?);
-        
+
         let confirm = Confirm::with_theme(&theme)
             .with_prompt("确认注册？")
             .default(true)
             .interact()?;
-        
+
         if !confirm {
             println!("{}", "已取消注册".yellow());
             return Ok(());
         }
-        
+
         // 执行注册
         self.register_client(config).await
     }
-    
+
     async fn register_client(&self, config: ClientConfig) -> Result<()> {
         println!("\n{}", "正在注册客户端...".blue());
-        
+
         // 发现端点
         let discovery = discover(
             &config.issuer,
             self.http_client.as_ref(),
             self.cache.as_ref(),
-        ).await?;
-        
-        let _registration_endpoint = discovery.registration_endpoint
+        )
+        .await?;
+
+        let _registration_endpoint = discovery
+            .registration_endpoint
             .context("此 OIDC 提供商不支持动态客户端注册")?;
-        
+
         // 构建注册请求
         let request = RegisterRequest {
             application_type: Some(config.application_type.clone()),
@@ -368,89 +386,106 @@ impl DcrTool {
             client_name: Some(config.client_name.clone()),
             software_id: Some(config.name.clone()), // 使用 name 作为 software_id
         };
-        
+
         // 执行注册
         let response = register_if_needed(
             &config.issuer,
             "your-initial-access-token", // TODO: 从配置或环境变量获取
             request,
             self.http_client.as_ref(),
-        ).await?;
-        
+        )
+        .await?;
+
         // 保存结果
         let mut clients = self.load_clients()?;
-        clients.insert(config.name.clone(), SavedClient {
-            config: config.clone(),
-            response: response.clone(),
-            registered_at: chrono::Utc::now(),
-        });
+        clients.insert(
+            config.name.clone(),
+            SavedClient {
+                config: config.clone(),
+                response: response.clone(),
+                registered_at: chrono::Utc::now(),
+            },
+        );
         self.save_clients(&clients)?;
-        
+
         // 显示结果
         println!("\n{}", "✅ 客户端注册成功！".green().bold());
         println!();
         println!("{}: {}", "客户端 ID".bold(), response.client_id.green());
         if let Some(secret) = &response.client_secret {
             println!("{}: {}", "客户端密钥".bold(), secret.red());
-            println!("\n{}", "⚠️  请妥善保存客户端密钥，此密钥不会再次显示！".yellow().bold());
+            println!(
+                "\n{}",
+                "⚠️  请妥善保存客户端密钥，此密钥不会再次显示！"
+                    .yellow()
+                    .bold()
+            );
         }
-        
+
         println!("\n{}", "注册信息已保存到:".blue());
         println!("  {}", self.clients_file().display());
-        
+
         Ok(())
     }
-    
+
     async fn list_clients(&self) -> Result<()> {
         let clients = self.load_clients()?;
-        
+
         if clients.is_empty() {
             println!("{}", "没有已注册的客户端".yellow());
             println!("\n运行 {} 注册新客户端", "dcr register".cyan());
             return Ok(());
         }
-        
+
         println!("{}", "=== 已注册的客户端 ===".blue().bold());
         println!();
-        
+
         for (name, client) in &clients {
             println!("{} {}", "•".green(), name.bold());
             println!("  客户端 ID: {}", client.response.client_id);
             println!("  发行者: {}", client.config.issuer);
-            println!("  注册时间: {}", client.registered_at.format("%Y-%m-%d %H:%M:%S"));
+            println!(
+                "  注册时间: {}",
+                client.registered_at.format("%Y-%m-%d %H:%M:%S")
+            );
             println!();
         }
-        
+
         Ok(())
     }
-    
+
     async fn show_client(&self, name: &str) -> Result<()> {
         let clients = self.load_clients()?;
-        
-        let client = clients.get(name)
+
+        let client = clients
+            .get(name)
             .context(format!("未找到客户端: {}", name))?;
-        
+
         println!("{}", format!("=== 客户端: {} ===", name).blue().bold());
         println!();
-        
+
         println!("{}", "注册配置:".green());
         println!("{}", serde_json::to_string_pretty(&client.config)?);
-        
+
         println!("\n{}", "注册响应:".green());
         println!("{}", serde_json::to_string_pretty(&client.response)?);
-        
+
         println!("\n{}", "元信息:".green());
-        println!("注册时间: {}", client.registered_at.format("%Y-%m-%d %H:%M:%S"));
-        
+        println!(
+            "注册时间: {}",
+            client.registered_at.format("%Y-%m-%d %H:%M:%S")
+        );
+
         Ok(())
     }
-    
+
     async fn export_client(&self, name: &str, format: &str) -> Result<()> {
         let clients = self.load_clients()?;
-        
-        let client = clients.get(name)
+
+        let client = clients
+            .get(name)
             .context(format!("未找到客户端: {}", name))?;
-        
+
         match format {
             "json" => {
                 let export = serde_json::json!({
@@ -462,7 +497,7 @@ impl DcrTool {
                 });
                 println!("{}", serde_json::to_string_pretty(&export)?);
             }
-            
+
             "toml" => {
                 let export = format!(
                     r#"[oidc]
@@ -473,56 +508,69 @@ redirect_uri = "{}"
 scope = "{}"
 "#,
                     client.response.client_id,
-                    client.response.client_secret
+                    client
+                        .response
+                        .client_secret
                         .as_ref()
                         .map(|s| format!("\"{}\"", s))
                         .unwrap_or_else(|| "null".to_string()),
                     client.config.issuer,
-                    client.config.redirect_uris.first().unwrap_or(&String::new()),
+                    client
+                        .config
+                        .redirect_uris
+                        .first()
+                        .unwrap_or(&String::new()),
                     client.config.scope,
                 );
                 println!("{}", export);
             }
-            
+
             "env" => {
                 println!("OIDC_CLIENT_ID={}", client.response.client_id);
                 if let Some(secret) = &client.response.client_secret {
                     println!("OIDC_CLIENT_SECRET={}", secret);
                 }
                 println!("OIDC_ISSUER={}", client.config.issuer);
-                println!("OIDC_REDIRECT_URI={}", client.config.redirect_uris.first().unwrap_or(&String::new()));
+                println!(
+                    "OIDC_REDIRECT_URI={}",
+                    client
+                        .config
+                        .redirect_uris
+                        .first()
+                        .unwrap_or(&String::new())
+                );
                 println!("OIDC_SCOPE={}", client.config.scope);
             }
-            
+
             _ => {
                 return Err(anyhow::anyhow!("不支持的格式: {}", format));
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn init_config(&self) -> Result<()> {
         let config = ClientConfig::default();
         let toml = toml::to_string_pretty(&config)?;
-        
+
         let path = PathBuf::from("dcr-config.toml");
         if path.exists() {
             let confirm = Confirm::new()
                 .with_prompt("配置文件已存在，是否覆盖？")
                 .default(false)
                 .interact()?;
-            
+
             if !confirm {
                 return Ok(());
             }
         }
-        
+
         fs::write(&path, toml)?;
         println!("{}", "✅ 已创建示例配置文件: dcr-config.toml".green());
         println!("\n编辑配置文件后运行:");
         println!("  {}", "dcr register --config dcr-config.toml".cyan());
-        
+
         Ok(())
     }
 }
@@ -536,10 +584,10 @@ async fn main() -> Result<()> {
         )
         .with(tracing_subscriber::fmt::layer().without_time())
         .init();
-    
+
     let cli = Cli::parse();
     let tool = DcrTool::new()?;
-    
+
     match cli.command {
         Commands::Register { issuer, config } => {
             if let Some(config_path) = config {
@@ -550,24 +598,24 @@ async fn main() -> Result<()> {
                 tool.register_interactive(issuer).await?;
             }
         }
-        
+
         Commands::List => {
             tool.list_clients().await?;
         }
-        
+
         Commands::Show { name } => {
             tool.show_client(&name).await?;
         }
-        
+
         Commands::Export { name, format } => {
             tool.export_client(&name, &format).await?;
         }
-        
+
         Commands::Init => {
             tool.init_config().await?;
         }
     }
-    
+
     Ok(())
 }
 

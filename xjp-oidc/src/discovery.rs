@@ -21,7 +21,7 @@ const DEFAULT_DISCOVERY_CACHE_TTL: u64 = 600;
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let http = ReqwestHttpClient::default();
 /// let cache = NoOpCache;
-/// 
+///
 /// let metadata = discover("https://auth.example.com", &http, &cache).await?;
 /// println!("Authorization endpoint: {}", metadata.authorization_endpoint);
 /// # Ok(())
@@ -38,7 +38,7 @@ pub async fn discover(
     cache: &dyn Cache<String, OidcProviderMetadata>,
 ) -> Result<OidcProviderMetadata> {
     tracing::info!(target: "xjp_oidc::discovery", "开始 OIDC 发现");
-    
+
     // Validate issuer URL
     if issuer.is_empty() {
         return Err(Error::InvalidParam("issuer cannot be empty"));
@@ -58,7 +58,7 @@ pub async fn discover(
         .get_value(&discovery_url)
         .await
         .map_err(|e| Error::Discovery(format!("Failed to fetch discovery metadata: {}", e)))?;
-    
+
     let metadata: OidcProviderMetadata = serde_json::from_value(value)
         .map_err(|e| Error::Discovery(format!("Failed to parse discovery metadata: {}", e)))?;
 
@@ -75,7 +75,7 @@ pub async fn discover(
 fn build_discovery_url(issuer: &str) -> Result<String> {
     // Remove trailing slash if present
     let issuer = issuer.trim_end_matches('/');
-    
+
     // Validate URL format
     let url = url::Url::parse(issuer)?;
     if url.scheme() != "https" && url.scheme() != "http" {
@@ -90,7 +90,7 @@ fn validate_metadata(metadata: &OidcProviderMetadata, expected_issuer: &str) -> 
     // The issuer in metadata must match the requested issuer
     let normalized_expected = expected_issuer.trim_end_matches('/');
     let normalized_actual = metadata.issuer.trim_end_matches('/');
-    
+
     if normalized_actual != normalized_expected {
         return Err(Error::Discovery(format!(
             "Issuer mismatch: expected '{}', got '{}'",
@@ -131,8 +131,7 @@ fn validate_metadata(metadata: &OidcProviderMetadata, expected_issuer: &str) -> 
 
 /// Validate an endpoint URL
 fn validate_endpoint_url(url: &str, name: &str) -> Result<()> {
-    url::Url::parse(url)
-        .map_err(|e| Error::Discovery(format!("Invalid {}: {}", name, e)))?;
+    url::Url::parse(url).map_err(|e| Error::Discovery(format!("Invalid {}: {}", name, e)))?;
     Ok(())
 }
 
@@ -169,7 +168,7 @@ mod tests {
             build_discovery_url("https://auth.example.com").unwrap(),
             "https://auth.example.com/.well-known/openid-configuration"
         );
-        
+
         assert_eq!(
             build_discovery_url("https://auth.example.com/").unwrap(),
             "https://auth.example.com/.well-known/openid-configuration"

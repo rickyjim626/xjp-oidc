@@ -8,7 +8,7 @@ use crate::{
     types::{ExchangeCode, TokenResponse},
 };
 #[cfg(not(target_arch = "wasm32"))]
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 
 /// Exchange authorization code for tokens
 ///
@@ -35,10 +35,7 @@ use base64::{Engine as _, engine::general_purpose};
 /// # }
 /// ```
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn exchange_code(
-    params: ExchangeCode,
-    http: &dyn HttpClient,
-) -> Result<TokenResponse> {
+pub async fn exchange_code(params: ExchangeCode, http: &dyn HttpClient) -> Result<TokenResponse> {
     // Validate parameters
     validate_exchange_params(&params)?;
 
@@ -68,7 +65,11 @@ pub async fn exchange_code(
 
     // Make the token request
     let response = http
-        .post_form_value(&metadata.token_endpoint, &form, auth_header.as_ref().map(|(k, v)| (k.as_str(), v.as_str())))
+        .post_form_value(
+            &metadata.token_endpoint,
+            &form,
+            auth_header.as_ref().map(|(k, v)| (k.as_str(), v.as_str())),
+        )
         .await
         .map_err(|e| {
             // Try to parse OAuth error from response
@@ -137,12 +138,18 @@ pub async fn exchange_code_with_endpoint(
     // Determine authentication method
     let auth_header = if let Some(client_secret) = &params.client_secret {
         // Check if we should use client_secret_post instead
-        if should_use_client_secret_post(&params.client_id) {
+        let use_post = params
+            .token_endpoint_auth_method
+            .as_ref()
+            .map(|m| m == "client_secret_post")
+            .unwrap_or(false);
+
+        if use_post {
             form.push(("client_id".to_string(), params.client_id.clone()));
             form.push(("client_secret".to_string(), client_secret.clone()));
             None
         } else {
-            // Use client_secret_basic
+            // Use client_secret_basic (default)
             let credentials = format!("{}:{}", params.client_id, client_secret);
             let encoded = general_purpose::STANDARD.encode(credentials.as_bytes());
             Some(("Authorization".to_string(), format!("Basic {}", encoded)))
@@ -155,7 +162,11 @@ pub async fn exchange_code_with_endpoint(
 
     // Make the token request
     let response = http
-        .post_form_value(token_endpoint, &form, auth_header.as_ref().map(|(k, v)| (k.as_str(), v.as_str())))
+        .post_form_value(
+            token_endpoint,
+            &form,
+            auth_header.as_ref().map(|(k, v)| (k.as_str(), v.as_str())),
+        )
         .await
         .map_err(|e| {
             // Try to parse OAuth error from response
@@ -173,15 +184,6 @@ pub async fn exchange_code_with_endpoint(
     Ok(tokens)
 }
 
-/// Determine if client should use client_secret_post
-/// This is a placeholder - in real usage, this would be determined
-/// from discovery metadata or client configuration
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn should_use_client_secret_post(_client_id: &str) -> bool {
-    // Default to client_secret_basic
-    false
-}
 
 // WASM stub
 #[cfg(target_arch = "wasm32")]
@@ -208,10 +210,7 @@ mod tests {
         };
         assert!(validate_exchange_params(&valid).is_ok());
 
-        let invalid = ExchangeCode {
-            issuer: "".into(),
-            ..valid.clone()
-        };
+        let invalid = ExchangeCode { issuer: "".into(), ..valid.clone() };
         assert!(validate_exchange_params(&invalid).is_err());
     }
 }

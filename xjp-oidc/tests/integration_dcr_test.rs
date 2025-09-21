@@ -1,12 +1,12 @@
 use xjp_oidc::register_if_needed;
-use xjp_oidc::types::{RegisterRequest, OidcProviderMetadata};
+use xjp_oidc::types::{OidcProviderMetadata, RegisterRequest};
 
 #[tokio::test]
 #[cfg(not(target_arch = "wasm32"))] // DCR is server-only
 async fn test_register_new_client() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     // Setup discovery endpoint with registration endpoint
     let metadata = OidcProviderMetadata {
         issuer: mock_issuer.clone(),
@@ -23,14 +23,15 @@ async fn test_register_new_client() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Mock successful registration
     let client_response = serde_json::json!({
         "client_id": "new-client-12345",
@@ -45,8 +46,9 @@ async fn test_register_new_client() {
         "application_type": "web",
         "status": "active"
     });
-    
-    let _register_mock = server.mock("POST", "/register")
+
+    let _register_mock = server
+        .mock("POST", "/register")
         .match_header("authorization", "Bearer test-token")
         .match_header("content-type", "application/json")
         .match_body(mockito::Matcher::Json(serde_json::json!({
@@ -63,9 +65,9 @@ async fn test_register_new_client() {
         .with_body(client_response.to_string())
         .create_async()
         .await;
-    
+
     let http_client = xjp_oidc::ReqwestHttpClient::default();
-    
+
     let req = RegisterRequest {
         application_type: Some("web".to_string()),
         redirect_uris: vec!["https://app.example.com/callback".to_string()],
@@ -77,22 +79,22 @@ async fn test_register_new_client() {
         contacts: None,
         software_id: None,
     };
-    
+
     let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_ok(), "Failed to register: {:?}", result.err());
-    
+
     let registration = result.unwrap();
     assert_eq!(registration.client_id, "new-client-12345");
     assert_eq!(registration.client_secret, Some("generated-secret-xyz".to_string()));
     assert_eq!(registration.client_name, "Test Application");
 }
 
-#[tokio::test] 
+#[tokio::test]
 #[cfg(not(target_arch = "wasm32"))]
 async fn test_register_no_endpoint() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     // Setup discovery endpoint WITHOUT registration endpoint
     let metadata = OidcProviderMetadata {
         issuer: mock_issuer.clone(),
@@ -109,16 +111,17 @@ async fn test_register_no_endpoint() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     let http_client = xjp_oidc::ReqwestHttpClient::default();
-    
+
     let req = RegisterRequest {
         application_type: None,
         redirect_uris: vec!["https://app.example.com/callback".to_string()],
@@ -130,16 +133,18 @@ async fn test_register_no_endpoint() {
         contacts: None,
         software_id: None,
     };
-    
+
     let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_err());
-    
+
     let error = result.unwrap_err();
     let error_msg = error.to_string();
     println!("Registration error: {}", error_msg);
-    assert!(error_msg.contains("registration") || 
-            error_msg.contains("not supported") || 
-            error_msg.contains("Registration"));
+    assert!(
+        error_msg.contains("registration")
+            || error_msg.contains("not supported")
+            || error_msg.contains("Registration")
+    );
 }
 
 #[tokio::test]
@@ -147,7 +152,7 @@ async fn test_register_no_endpoint() {
 async fn test_register_with_contacts() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     // Setup discovery endpoint
     let metadata = OidcProviderMetadata {
         issuer: mock_issuer.clone(),
@@ -164,14 +169,15 @@ async fn test_register_with_contacts() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Mock registration with contacts
     let client_response = serde_json::json!({
         "client_id": "client-with-contacts",
@@ -185,8 +191,9 @@ async fn test_register_with_contacts() {
         "contacts": ["admin@example.com", "support@example.com"],
         "status": "active"
     });
-    
-    let _register_mock = server.mock("POST", "/register")
+
+    let _register_mock = server
+        .mock("POST", "/register")
         .match_header("authorization", "Bearer test-token")
         .match_header("content-type", "application/json")
         .match_body(mockito::Matcher::Json(serde_json::json!({
@@ -203,9 +210,9 @@ async fn test_register_with_contacts() {
         .with_body(client_response.to_string())
         .create_async()
         .await;
-    
+
     let http_client = xjp_oidc::ReqwestHttpClient::default();
-    
+
     let req = RegisterRequest {
         application_type: None,
         redirect_uris: vec!["https://app.example.com/callback".to_string()],
@@ -217,10 +224,10 @@ async fn test_register_with_contacts() {
         contacts: Some(vec!["admin@example.com".to_string(), "support@example.com".to_string()]),
         software_id: None,
     };
-    
+
     let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_ok(), "Failed to register: {:?}", result.err());
-    
+
     let registration = result.unwrap();
     assert_eq!(registration.client_id, "client-with-contacts");
 }
@@ -230,7 +237,7 @@ async fn test_register_with_contacts() {
 async fn test_register_error_handling() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     // Setup discovery endpoint
     let metadata = OidcProviderMetadata {
         issuer: mock_issuer.clone(),
@@ -247,30 +254,32 @@ async fn test_register_error_handling() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Mock error response
     let error_response = serde_json::json!({
         "error": "invalid_request",
         "error_description": "Invalid redirect URI"
     });
-    
-    let _register_mock = server.mock("POST", "/register")
+
+    let _register_mock = server
+        .mock("POST", "/register")
         .match_header("authorization", "Bearer test-token")
         .with_status(400)
         .with_header("content-type", "application/json")
         .with_body(error_response.to_string())
         .create_async()
         .await;
-    
+
     let http_client = xjp_oidc::ReqwestHttpClient::default();
-    
+
     let req = RegisterRequest {
         application_type: None,
         redirect_uris: vec!["invalid://redirect".to_string()],
@@ -282,10 +291,10 @@ async fn test_register_error_handling() {
         contacts: None,
         software_id: None,
     };
-    
+
     let result = register_if_needed(&mock_issuer, "test-token", req, &http_client).await;
     assert!(result.is_err());
-    
+
     let error = result.unwrap_err();
     assert!(error.to_string().contains("invalid_request") || error.to_string().contains("400"));
 }

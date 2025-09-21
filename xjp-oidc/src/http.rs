@@ -29,7 +29,7 @@ pub enum HttpClientError {
 }
 
 /// HTTP client trait for abstraction over different implementations
-/// 
+///
 /// This trait uses serde_json::Value to maintain object safety
 #[async_trait]
 pub trait HttpClient: Send + Sync {
@@ -103,28 +103,23 @@ mod reqwest_impl {
     impl HttpClient for ReqwestHttpClient {
         async fn get_value(&self, url: &str) -> Result<serde_json::Value, HttpClientError> {
             let start = std::time::Instant::now();
-            let response = self
-                .client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| {
-                    tracing::error!(
-                        target: "xjp_oidc::http",
-                        url = %url,
-                        error = %e,
-                        "HTTP GET 请求失败"
-                    );
-                    if e.is_timeout() {
-                        HttpClientError::Timeout
-                    } else {
-                        HttpClientError::RequestFailed(e.to_string())
-                    }
-                })?;
+            let response = self.client.get(url).send().await.map_err(|e| {
+                tracing::error!(
+                    target: "xjp_oidc::http",
+                    url = %url,
+                    error = %e,
+                    "HTTP GET 请求失败"
+                );
+                if e.is_timeout() {
+                    HttpClientError::Timeout
+                } else {
+                    HttpClientError::RequestFailed(e.to_string())
+                }
+            })?;
 
             let status = response.status();
             let duration = start.elapsed();
-            
+
             tracing::info!(
                 target: "xjp_oidc::http",
                 url = %url,
@@ -134,14 +129,9 @@ mod reqwest_impl {
                 "HTTP 请求完成"
             );
             if !status.is_success() {
-                let message = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "No error message".to_string());
-                return Err(HttpClientError::InvalidStatus {
-                    status: status.as_u16(),
-                    message,
-                });
+                let message =
+                    response.text().await.unwrap_or_else(|_| "No error message".to_string());
+                return Err(HttpClientError::InvalidStatus { status: status.as_u16(), message });
             }
 
             response
@@ -172,14 +162,9 @@ mod reqwest_impl {
 
             let status = response.status();
             if !status.is_success() {
-                let message = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "No error message".to_string());
-                return Err(HttpClientError::InvalidStatus {
-                    status: status.as_u16(),
-                    message,
-                });
+                let message =
+                    response.text().await.unwrap_or_else(|_| "No error message".to_string());
+                return Err(HttpClientError::InvalidStatus { status: status.as_u16(), message });
             }
 
             response
@@ -210,14 +195,9 @@ mod reqwest_impl {
 
             let status = response.status();
             if !status.is_success() {
-                let message = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "No error message".to_string());
-                return Err(HttpClientError::InvalidStatus {
-                    status: status.as_u16(),
-                    message,
-                });
+                let message =
+                    response.text().await.unwrap_or_else(|_| "No error message".to_string());
+                return Err(HttpClientError::InvalidStatus { status: status.as_u16(), message });
             }
 
             response
@@ -283,9 +263,7 @@ mod wasm_impl {
             _form: &[(String, String)],
             _auth_header: Option<(&str, &str)>,
         ) -> Result<serde_json::Value, HttpClientError> {
-            Err(HttpClientError::NotSupported(
-                "POST form not supported in WASM".to_string(),
-            ))
+            Err(HttpClientError::NotSupported("POST form not supported in WASM".to_string()))
         }
 
         async fn post_json_value(
@@ -294,9 +272,7 @@ mod wasm_impl {
             _body: &serde_json::Value,
             _auth_header: Option<(&str, &str)>,
         ) -> Result<serde_json::Value, HttpClientError> {
-            Err(HttpClientError::NotSupported(
-                "POST JSON not supported in WASM".to_string(),
-            ))
+            Err(HttpClientError::NotSupported("POST JSON not supported in WASM".to_string()))
         }
     }
 }

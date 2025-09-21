@@ -1,8 +1,12 @@
-use xjp_oidc::{verify_id_token, NoOpCache, MokaCacheImpl, Jwks, Jwk, VerifyOptions};
-use xjp_oidc::types::OidcProviderMetadata;
-use josekit::{jwk::Jwk as JosekitJwk, jws::JwsHeader, jwt::{JwtPayload, self}};
+use josekit::{
+    jwk::Jwk as JosekitJwk,
+    jws::JwsHeader,
+    jwt::{self, JwtPayload},
+};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
+use xjp_oidc::types::OidcProviderMetadata;
+use xjp_oidc::{verify_id_token, Jwk, Jwks, MokaCacheImpl, NoOpCache, VerifyOptions};
 
 // Helper function to create a test RSA key pair
 fn create_test_keypair() -> (JosekitJwk, Jwk) {
@@ -12,7 +16,7 @@ fn create_test_keypair() -> (JosekitJwk, Jwk) {
     jwk.set_key_id("test-key-1");
     jwk.set_algorithm(alg.name());
     jwk.set_key_use("sig");
-    
+
     // Convert to our Jwk type for JWKS endpoint
     let public_jwk = Jwk {
         kty: "RSA".to_string(),
@@ -25,20 +29,17 @@ fn create_test_keypair() -> (JosekitJwk, Jwk) {
         y: None,
         crv: None,
     };
-    
+
     (jwk, public_jwk)
 }
 
 // Helper function to create and sign a test ID token
-fn create_signed_id_token(
-    jwk: &JosekitJwk,
-    claims: serde_json::Value,
-) -> String {
+fn create_signed_id_token(jwk: &JosekitJwk, claims: serde_json::Value) -> String {
     let mut header = JwsHeader::new();
     header.set_token_type("JWT");
     header.set_algorithm("RS256");
     header.set_key_id("test-key-1");
-    
+
     let payload = JwtPayload::from_map(claims.as_object().unwrap().clone()).unwrap();
     let signer = josekit::jws::RS256.signer_from_jwk(jwk).unwrap();
     let jwt = jwt::encode_with_signer(&payload, &header, &signer).unwrap();
@@ -60,22 +61,21 @@ fn create_http_client() -> xjp_oidc::WasmHttpClient {
 async fn test_verify_id_token_basic() {
     let mut server = mockito::Server::new_async().await;
     let issuer = server.url();
-    
+
     // Create test keypair
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup JWKS endpoint
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     // Setup discovery endpoint
     let metadata = OidcProviderMetadata {
         issuer: issuer.clone(),
@@ -92,20 +92,21 @@ async fn test_verify_id_token_basic() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Create ID token claims
     let now = OffsetDateTime::now_utc();
     let exp = now + Duration::hours(1);
     let iat = now;
     let auth_time = now - Duration::minutes(5);
-    
+
     let claims = json!({
         "iss": issuer,
         "sub": "user123",
@@ -117,13 +118,13 @@ async fn test_verify_id_token_basic() {
         "amr": ["pwd", "otp"],
         "xjp_admin": true,
     });
-    
+
     let id_token = create_signed_id_token(&private_key, claims);
-    
+
     // Verify the token
     let http_client = create_http_client();
     let jwks_cache = MokaCacheImpl::new(10);
-    
+
     let opts = VerifyOptions {
         issuer: &issuer,
         audience: "test-client",
@@ -133,11 +134,11 @@ async fn test_verify_id_token_basic() {
         http: &http_client,
         cache: &jwks_cache,
     };
-    
+
     let result = verify_id_token(&id_token, opts).await;
-    
+
     assert!(result.is_ok());
-    
+
     let verified_token = result.unwrap();
     assert_eq!(verified_token.iss, issuer);
     assert_eq!(verified_token.sub, "user123");
@@ -151,23 +152,24 @@ async fn test_verify_id_token_basic() {
 async fn test_verify_id_token_invalid_signature() {
     let mut server = mockito::Server::new_async().await;
     let issuer = server.url();
-    
+
     // Create two different keypairs
     let (private_key1, _) = create_test_keypair();
     let (_, public_key2) = create_test_keypair();
-    
+
     // Setup JWKS endpoint with different public key
     let jwks = Jwks {
         keys: vec![public_key2], // Wrong public key
     };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     // Setup discovery endpoint
     let metadata = OidcProviderMetadata {
         issuer: issuer.clone(),
@@ -184,14 +186,15 @@ async fn test_verify_id_token_invalid_signature() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Create ID token signed with different key
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -201,13 +204,13 @@ async fn test_verify_id_token_invalid_signature() {
         "exp": (now + Duration::hours(1)).unix_timestamp(),
         "iat": now.unix_timestamp(),
     });
-    
+
     let id_token = create_signed_id_token(&private_key1, claims);
-    
+
     // Verify should fail due to signature mismatch
     let http_client = create_http_client();
     let jwks_cache = NoOpCache;
-    
+
     let opts = VerifyOptions {
         issuer: &issuer,
         audience: "test-client",
@@ -217,9 +220,9 @@ async fn test_verify_id_token_invalid_signature() {
         http: &http_client,
         cache: &jwks_cache,
     };
-    
+
     let result = verify_id_token(&id_token, opts).await;
-    
+
     assert!(result.is_err());
 }
 
@@ -227,20 +230,19 @@ async fn test_verify_id_token_invalid_signature() {
 async fn test_verify_id_token_expired() {
     let mut server = mockito::Server::new_async().await;
     let issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let metadata = OidcProviderMetadata {
         issuer: issuer.clone(),
         authorization_endpoint: format!("{}/authorize", issuer),
@@ -256,14 +258,15 @@ async fn test_verify_id_token_expired() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     // Create expired ID token
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -273,12 +276,12 @@ async fn test_verify_id_token_expired() {
         "exp": (now - Duration::hours(1)).unix_timestamp(), // Expired
         "iat": (now - Duration::hours(2)).unix_timestamp(),
     });
-    
+
     let id_token = create_signed_id_token(&private_key, claims);
-    
+
     let http_client = create_http_client();
     let jwks_cache = NoOpCache;
-    
+
     let opts = VerifyOptions {
         issuer: &issuer,
         audience: "test-client",
@@ -288,9 +291,9 @@ async fn test_verify_id_token_expired() {
         http: &http_client,
         cache: &jwks_cache,
     };
-    
+
     let result = verify_id_token(&id_token, opts).await;
-    
+
     assert!(result.is_err());
 }
 
@@ -298,20 +301,19 @@ async fn test_verify_id_token_expired() {
 async fn test_verify_id_token_wrong_audience() {
     let mut server = mockito::Server::new_async().await;
     let issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let metadata = OidcProviderMetadata {
         issuer: issuer.clone(),
         authorization_endpoint: format!("{}/authorize", issuer),
@@ -327,14 +329,15 @@ async fn test_verify_id_token_wrong_audience() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     let now = OffsetDateTime::now_utc();
     let claims = json!({
         "iss": issuer,
@@ -343,12 +346,12 @@ async fn test_verify_id_token_wrong_audience() {
         "exp": (now + Duration::hours(1)).unix_timestamp(),
         "iat": now.unix_timestamp(),
     });
-    
+
     let id_token = create_signed_id_token(&private_key, claims);
-    
+
     let http_client = create_http_client();
     let jwks_cache = NoOpCache;
-    
+
     let opts = VerifyOptions {
         issuer: &issuer,
         audience: "test-client", // Expected audience
@@ -358,9 +361,9 @@ async fn test_verify_id_token_wrong_audience() {
         http: &http_client,
         cache: &jwks_cache,
     };
-    
+
     let result = verify_id_token(&id_token, opts).await;
-    
+
     assert!(result.is_err());
 }
 
@@ -368,20 +371,19 @@ async fn test_verify_id_token_wrong_audience() {
 async fn test_verify_id_token_nonce_mismatch() {
     let mut server = mockito::Server::new_async().await;
     let issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let metadata = OidcProviderMetadata {
         issuer: issuer.clone(),
         authorization_endpoint: format!("{}/authorize", issuer),
@@ -397,14 +399,15 @@ async fn test_verify_id_token_nonce_mismatch() {
         id_token_signing_alg_values_supported: Some(vec!["RS256".to_string()]),
         code_challenge_methods_supported: Some(vec!["S256".to_string()]),
     };
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&metadata).unwrap())
         .create_async()
         .await;
-    
+
     let now = OffsetDateTime::now_utc();
     let claims = json!({
         "iss": issuer,
@@ -414,12 +417,12 @@ async fn test_verify_id_token_nonce_mismatch() {
         "iat": now.unix_timestamp(),
         "nonce": "wrong-nonce",
     });
-    
+
     let id_token = create_signed_id_token(&private_key, claims);
-    
+
     let http_client = create_http_client();
     let jwks_cache = NoOpCache;
-    
+
     let opts = VerifyOptions {
         issuer: &issuer,
         audience: "test-client",
@@ -429,8 +432,8 @@ async fn test_verify_id_token_nonce_mismatch() {
         http: &http_client,
         cache: &jwks_cache,
     };
-    
+
     let result = verify_id_token(&id_token, opts).await;
-    
+
     assert!(result.is_err());
 }

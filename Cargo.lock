@@ -2879,6 +2879,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-backend-connection"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "colored 2.2.0",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "xjp-oidc 1.0.0-rc.1",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"

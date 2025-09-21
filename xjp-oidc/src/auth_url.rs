@@ -5,9 +5,9 @@ use crate::{
     types::{BuildAuthUrl, CallbackParams, EndSession, OidcProviderMetadata},
 };
 use rand::{distributions::Alphanumeric, Rng};
-use url::Url;
 #[cfg(test)]
 use std::collections::HashMap;
+use url::Url;
 
 /// Build an authorization URL for the OAuth2/OIDC flow
 ///
@@ -40,10 +40,17 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
     }
 
     // Build authorization endpoint URL
-    let auth_endpoint = if params.issuer.ends_with('/') {
-        format!("{}oauth/authorize", params.issuer)
+    // Use provided authorization_endpoint if available, otherwise fallback to default path
+    let auth_endpoint = if let Some(endpoint) = params.authorization_endpoint {
+        endpoint
     } else {
-        format!("{}/oauth/authorize", params.issuer)
+        // Fallback to hardcoded path for backward compatibility
+        // TODO: Consider deprecating this and requiring discovery metadata
+        if params.issuer.ends_with('/') {
+            format!("{}oauth/authorize", params.issuer)
+        } else {
+            format!("{}/oauth/authorize", params.issuer)
+        }
     };
 
     let mut url = Url::parse(&auth_endpoint)?;
@@ -56,11 +63,7 @@ pub fn build_auth_url(params: BuildAuthUrl) -> Result<Url> {
         query.append_pair("redirect_uri", &params.redirect_uri);
 
         // Scope
-        let scope = if params.scope.is_empty() {
-            "openid profile email"
-        } else {
-            &params.scope
-        };
+        let scope = if params.scope.is_empty() { "openid profile email" } else { &params.scope };
         query.append_pair("scope", scope);
 
         // State (generate if not provided)
@@ -157,12 +160,8 @@ pub fn build_end_session_url(params: EndSession) -> Result<Url> {
 /// assert_eq!(params.state, Some("xyz".to_string()));
 /// ```
 pub fn parse_callback_params(url: &str) -> CallbackParams {
-    let mut params = CallbackParams {
-        code: None,
-        state: None,
-        error: None,
-        error_description: None,
-    };
+    let mut params =
+        CallbackParams { code: None, state: None, error: None, error_description: None };
 
     // Parse URL and extract query parameters
     if let Ok(parsed_url) = Url::parse(url) {
@@ -186,19 +185,21 @@ pub fn parse_callback_params(url: &str) -> CallbackParams {
         } else {
             ""
         };
-        
+
         if !query.is_empty() {
             for pair in query.split('&') {
                 if let Some(eq_pos) = pair.find('=') {
                     let key = &pair[..eq_pos];
                     let value = &pair[eq_pos + 1..];
                     let decoded_value = urlencoding::decode(value).unwrap_or_else(|_| value.into());
-                    
+
                     match key {
                         "code" => params.code = Some(decoded_value.into_owned()),
                         "state" => params.state = Some(decoded_value.into_owned()),
                         "error" => params.error = Some(decoded_value.into_owned()),
-                        "error_description" => params.error_description = Some(decoded_value.into_owned()),
+                        "error_description" => {
+                            params.error_description = Some(decoded_value.into_owned())
+                        }
                         _ => {} // Ignore other parameters
                     }
                 }
@@ -261,20 +262,12 @@ pub fn build_auth_url_with_metadata(
 
 /// Generate a random state parameter
 fn generate_state() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect()
+    rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect()
 }
 
 /// Generate a random nonce
 fn generate_nonce() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect()
+    rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect()
 }
 
 #[cfg(test)]
@@ -298,10 +291,13 @@ mod tests {
         .unwrap();
 
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        
+
         assert_eq!(query.get("response_type"), Some(&"code".to_string()));
         assert_eq!(query.get("client_id"), Some(&"test-client".to_string()));
-        assert_eq!(query.get("redirect_uri"), Some(&"https://app.example.com/callback".to_string()));
+        assert_eq!(
+            query.get("redirect_uri"),
+            Some(&"https://app.example.com/callback".to_string())
+        );
         assert_eq!(query.get("scope"), Some(&"openid profile".to_string()));
         assert_eq!(query.get("state"), Some(&"test_state".to_string()));
         assert_eq!(query.get("nonce"), Some(&"test_nonce".to_string()));
@@ -326,7 +322,7 @@ mod tests {
         .unwrap();
 
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        
+
         // State and nonce should be auto-generated
         assert!(query.contains_key("state"));
         assert!(query.contains_key("nonce"));
@@ -336,10 +332,9 @@ mod tests {
 
     #[test]
     fn test_parse_callback_params() {
-        let params = parse_callback_params(
-            "https://app.example.com/callback?code=abc123&state=xyz456"
-        );
-        
+        let params =
+            parse_callback_params("https://app.example.com/callback?code=abc123&state=xyz456");
+
         assert_eq!(params.code, Some("abc123".to_string()));
         assert_eq!(params.state, Some("xyz456".to_string()));
         assert_eq!(params.error, None);
@@ -351,7 +346,7 @@ mod tests {
         let params = parse_callback_params(
             "https://app.example.com/callback?error=access_denied&error_description=User%20denied%20access"
         );
-        
+
         assert_eq!(params.code, None);
         assert_eq!(params.state, None);
         assert_eq!(params.error, Some("access_denied".to_string()));
@@ -361,7 +356,7 @@ mod tests {
     #[test]
     fn test_parse_callback_params_relative_url() {
         let params = parse_callback_params("/callback?code=test&state=test");
-        
+
         assert_eq!(params.code, Some("test".to_string()));
         assert_eq!(params.state, Some("test".to_string()));
     }
@@ -377,9 +372,12 @@ mod tests {
         .unwrap();
 
         let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        
+
         assert_eq!(query.get("id_token_hint"), Some(&"test_token".to_string()));
-        assert_eq!(query.get("post_logout_redirect_uri"), Some(&"https://app.example.com".to_string()));
+        assert_eq!(
+            query.get("post_logout_redirect_uri"),
+            Some(&"https://app.example.com".to_string())
+        );
         assert_eq!(query.get("state"), Some(&"logout_state".to_string()));
     }
 }

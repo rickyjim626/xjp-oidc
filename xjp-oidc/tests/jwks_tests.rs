@@ -1,4 +1,4 @@
-use xjp_oidc::{fetch_jwks, NoOpCache, MokaCacheImpl, Jwks, Jwk};
+use xjp_oidc::{fetch_jwks, Jwk, Jwks, MokaCacheImpl, NoOpCache};
 
 fn create_test_jwks() -> Jwks {
     Jwks {
@@ -33,35 +33,36 @@ fn create_test_jwks() -> Jwks {
 async fn test_fetch_jwks_basic() {
     let mut server = mockito::Server::new_async().await;
     let jwks_uri = format!("{}/jwks", server.url());
-    
+
     let test_jwks = create_test_jwks();
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&test_jwks).unwrap())
         .create_async()
         .await;
-    
+
     // Create HTTP client based on platform
     #[cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))]
     let http_client = xjp_oidc::ReqwestHttpClient::default();
     #[cfg(all(target_arch = "wasm32", feature = "http-wasm"))]
     let http_client = xjp_oidc::WasmHttpClient::default();
     let cache = NoOpCache;
-    
+
     let result = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result.is_ok());
-    
+
     let fetched = result.unwrap();
     assert_eq!(fetched.keys.len(), 2);
-    
+
     let key1 = &fetched.keys[0];
     assert_eq!(key1.kty, "RSA");
     assert_eq!(key1.kid, "test-key-1");
     assert_eq!(key1.alg, "RS256");
     assert_eq!(key1.use_, "sig");
-    
+
     let key2 = &fetched.keys[1];
     assert_eq!(key2.kid, "test-key-2");
 }
@@ -70,32 +71,33 @@ async fn test_fetch_jwks_basic() {
 async fn test_fetch_jwks_with_cache() {
     let mut server = mockito::Server::new_async().await;
     let jwks_uri = format!("{}/jwks", server.url());
-    
+
     let test_jwks = create_test_jwks();
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&test_jwks).unwrap())
         .expect(1) // Should only be called once due to caching
         .create_async()
         .await;
-    
+
     // Create HTTP client based on platform
     #[cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))]
     let http_client = xjp_oidc::ReqwestHttpClient::default();
     #[cfg(all(target_arch = "wasm32", feature = "http-wasm"))]
     let http_client = xjp_oidc::WasmHttpClient::default();
     let cache = MokaCacheImpl::new(10);
-    
+
     // First fetch - should hit the server
     let result1 = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result1.is_ok());
-    
+
     // Second fetch - should come from cache
     let result2 = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result2.is_ok());
-    
+
     // Verify both results are the same
     let jwks1 = result1.unwrap();
     let jwks2 = result2.unwrap();
@@ -113,38 +115,37 @@ async fn test_fetch_jwks_error_cases() {
     #[cfg(all(target_arch = "wasm32", feature = "http-wasm"))]
     let http_client = xjp_oidc::WasmHttpClient::default();
     let cache = NoOpCache;
-    
+
     // Test 404 response
-    let _not_found_mock = server.mock("GET", "/jwks")
-        .with_status(404)
-        .create_async()
-        .await;
-    
+    let _not_found_mock = server.mock("GET", "/jwks").with_status(404).create_async().await;
+
     let result = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result.is_err());
-    
+
     // Reset and test invalid JSON
     drop(_not_found_mock);
-    let _invalid_json_mock = server.mock("GET", "/jwks")
+    let _invalid_json_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("{invalid json}")
         .create_async()
         .await;
-    
+
     let result = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result.is_err());
-    
+
     // Reset and test empty keys array
     drop(_invalid_json_mock);
     let empty_jwks = Jwks { keys: vec![] };
-    let _empty_mock = server.mock("GET", "/jwks")
+    let _empty_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&empty_jwks).unwrap())
         .create_async()
         .await;
-    
+
     let result = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result.is_ok());
     let fetched = result.unwrap();
@@ -155,7 +156,7 @@ async fn test_fetch_jwks_error_cases() {
 async fn test_fetch_jwks_with_various_key_types() {
     let mut server = mockito::Server::new_async().await;
     let jwks_uri = format!("{}/jwks", server.url());
-    
+
     let mixed_jwks = Jwks {
         keys: vec![
             // RSA key
@@ -184,32 +185,33 @@ async fn test_fetch_jwks_with_various_key_types() {
             },
         ],
     };
-    
-    let _mixed_mock = server.mock("GET", "/jwks")
+
+    let _mixed_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&mixed_jwks).unwrap())
         .create_async()
         .await;
-    
+
     // Create HTTP client based on platform
     #[cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))]
     let http_client = xjp_oidc::ReqwestHttpClient::default();
     #[cfg(all(target_arch = "wasm32", feature = "http-wasm"))]
     let http_client = xjp_oidc::WasmHttpClient::default();
     let cache = NoOpCache;
-    
+
     let result = fetch_jwks(&jwks_uri, &http_client, &cache).await;
     assert!(result.is_ok());
-    
+
     let fetched = result.unwrap();
     assert_eq!(fetched.keys.len(), 2);
-    
+
     // Verify all key types are properly parsed
     assert_eq!(fetched.keys[0].kid, "rsa-key");
     assert_eq!(fetched.keys[0].kty, "RSA");
     assert!(fetched.keys[0].n.is_some());
-    
+
     assert_eq!(fetched.keys[1].kid, "ec-key");
     assert_eq!(fetched.keys[1].kty, "EC");
     assert!(fetched.keys[1].x.is_some());

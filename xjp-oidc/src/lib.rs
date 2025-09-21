@@ -61,7 +61,9 @@ mod pkce;
 mod verify;
 
 // Re-export main types and functions
-pub use auth_url::{build_auth_url, build_end_session_url, parse_callback_params};
+pub use auth_url::{
+    build_auth_url, build_auth_url_with_metadata, build_end_session_url, parse_callback_params,
+};
 pub use cache::{Cache, NoOpCache};
 
 #[cfg(feature = "lru")]

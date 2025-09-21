@@ -8,8 +8,8 @@ use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc};
 use xjp_oidc::{
     build_auth_url, build_end_session_url, create_pkce, exchange_code, parse_callback_params,
-    verify_id_token, MokaCacheImpl, ReqwestHttpClient,
     types::{BuildAuthUrl, EndSession, ExchangeCode, VerifyOptions},
+    verify_id_token, MokaCacheImpl, ReqwestHttpClient,
 };
 
 #[derive(Clone)]
@@ -31,7 +31,7 @@ struct AppState {
 async fn main() {
     // Load environment variables
     dotenvy::dotenv().ok();
-    
+
     let cfg = Arc::new(Config {
         issuer: std::env::var("ISSUER").expect("ISSUER env var required"),
         client_id: std::env::var("CLIENT_ID").expect("CLIENT_ID env var required"),
@@ -39,13 +39,13 @@ async fn main() {
         post_logout_redirect_uri: std::env::var("POST_LOGOUT_REDIRECT_URI")
             .expect("POST_LOGOUT_REDIRECT_URI env var required"),
     });
-    
+
     let state = AppState {
         http: Arc::new(ReqwestHttpClient::default()),
         cache: Arc::new(MokaCacheImpl::new(1024)),
         cfg,
     };
-    
+
     let app = Router::new()
         .route("/", get(home))
         .route("/login", get(login))
@@ -53,12 +53,12 @@ async fn main() {
         .route("/me", get(me))
         .route("/logout", get(logout))
         .with_state(state);
-    
+
     let addr: SocketAddr = "0.0.0.0:3000".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("Example BFF server listening on http://{}", addr);
     println!("Visit http://localhost:3000 to start");
-    
+
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -69,11 +69,11 @@ async fn home() -> &'static str {
 async fn login(State(st): State<AppState>) -> Redirect {
     // Generate PKCE challenge
     let (verifier, challenge, _method) = create_pkce().expect("Failed to create PKCE");
-    
+
     // In production: Save verifier to server-side session
     // For demo simplicity, we're using a temporary file (NOT FOR PRODUCTION!)
     std::fs::write("/tmp/pkce_verifier", &verifier).ok();
-    
+
     // Build authorization URL
     let auth_url = build_auth_url(BuildAuthUrl {
         issuer: st.cfg.issuer.clone(),
@@ -88,11 +88,11 @@ async fn login(State(st): State<AppState>) -> Redirect {
         tenant: None,
     })
     .expect("Failed to build auth URL");
-    
+
     // Also save state and nonce for verification (demo only)
     std::fs::write("/tmp/oauth_state", "demo_state_12345").ok();
     std::fs::write("/tmp/oauth_nonce", "demo_nonce_67890").ok();
-    
+
     println!("Redirecting to: {}", auth_url);
     Redirect::to(auth_url.as_str())
 }
@@ -122,9 +122,9 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
         query_parts.push(format!("error_description={}", desc));
     }
     let query_string = query_parts.join("&");
-    
+
     let params = parse_callback_params(&query_string);
-    
+
     // Check for OAuth errors
     if let Some(error) = params.error {
         return format!(
@@ -133,7 +133,7 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
             params.error_description.unwrap_or_default()
         );
     }
-    
+
     // Verify state (demo only - in production use secure session)
     let expected_state = std::fs::read_to_string("/tmp/oauth_state")
         .ok()
@@ -141,15 +141,15 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
     if params.state.as_deref() != Some(expected_state.trim()) {
         return "Invalid state parameter".to_string();
     }
-    
+
     let code = params.code.expect("Authorization code missing");
-    
+
     // Retrieve PKCE verifier (demo only - in production use secure session)
     let verifier = std::fs::read_to_string("/tmp/pkce_verifier")
         .expect("PKCE verifier not found")
         .trim()
         .to_string();
-    
+
     // Exchange authorization code for tokens
     let tokens = match exchange_code(
         ExchangeCode {
@@ -167,15 +167,15 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
         Ok(tokens) => tokens,
         Err(e) => return format!("Token exchange failed: {}", e),
     };
-    
+
     // Verify ID token
     let id_token = tokens.id_token.as_ref().expect("ID token missing");
-    
+
     // Retrieve expected nonce (demo only)
     let expected_nonce = std::fs::read_to_string("/tmp/oauth_nonce")
         .ok()
         .map(|n| n.trim().to_string());
-    
+
     let claims = match verify_id_token(
         id_token,
         VerifyOptions {
@@ -193,11 +193,11 @@ async fn callback(State(st): State<AppState>, Query(query): Query<CallbackQuery>
         Ok(claims) => claims,
         Err(e) => return format!("ID token verification failed: {}", e),
     };
-    
+
     // Save tokens and claims (demo only - in production use secure session)
     std::fs::write("/tmp/access_token", &tokens.access_token).ok();
     std::fs::write("/tmp/id_token", id_token).ok();
-    
+
     // Display user info
     format!(
         "Login successful!\n\n\
@@ -236,14 +236,14 @@ async fn logout(State(st): State<AppState>) -> Redirect {
         .unwrap_or_default()
         .trim()
         .to_string();
-    
+
     // Clear session (demo only)
     std::fs::remove_file("/tmp/access_token").ok();
     std::fs::remove_file("/tmp/id_token").ok();
     std::fs::remove_file("/tmp/pkce_verifier").ok();
     std::fs::remove_file("/tmp/oauth_state").ok();
     std::fs::remove_file("/tmp/oauth_nonce").ok();
-    
+
     // Build logout URL
     let logout_url = build_end_session_url(EndSession {
         issuer: st.cfg.issuer.clone(),
@@ -252,6 +252,6 @@ async fn logout(State(st): State<AppState>) -> Redirect {
         state: None,
     })
     .unwrap_or_else(|_| url::Url::parse(&st.cfg.post_logout_redirect_uri).unwrap());
-    
+
     Redirect::to(logout_url.as_str())
 }

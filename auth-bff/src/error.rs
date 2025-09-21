@@ -9,16 +9,16 @@ use serde_json::json;
 pub enum AppError {
     #[error("OIDC error: {0}")]
     Oidc(#[from] xjp_oidc::Error),
-    
+
     #[error("Session error: {0}")]
     Session(String),
-    
+
     #[error("Unauthorized")]
     Unauthorized,
-    
+
     #[error("Bad request: {0}")]
     BadRequest(String),
-    
+
     #[error("Internal server error")]
     Internal(#[from] anyhow::Error),
 }
@@ -26,13 +26,22 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::Oidc(e) => (StatusCode::BAD_REQUEST, format!("Authentication failed: {}", e)),
-            AppError::Session(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Session error: {}", msg)),
+            AppError::Oidc(e) => (
+                StatusCode::BAD_REQUEST,
+                format!("Authentication failed: {}", e),
+            ),
+            AppError::Session(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Session error: {}", msg),
+            ),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {:#}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
         };
 

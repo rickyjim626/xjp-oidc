@@ -2,10 +2,7 @@
 
 use crate::error::AuthError;
 use async_trait::async_trait;
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 use std::ops::Deref;
 
 /// Extension key for storing verified claims
@@ -138,15 +135,12 @@ where
 {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         Ok(OptionalClaims(
             parts
                 .extensions
                 .get::<ClaimsExtension>()
-                .map(|ext| ext.0.clone())
+                .map(|ext| ext.0.clone()),
         ))
     }
 }

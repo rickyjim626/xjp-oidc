@@ -6,22 +6,18 @@
 //! 3. 提取和使用验证后的声明
 //! 4. 基于管理员权限的访问控制
 
-use axum::{
-    routing::get,
-    Router, Json,
-    middleware,
-};
+use axum::{middleware, routing::get, Json, Router};
 use serde::Serialize;
-use std::{net::SocketAddr, sync::Arc, collections::HashMap};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{CorsLayer, Any},
+    cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use xjp_oidc::{JwtVerifier, ReqwestHttpClient, NoOpCache};
-use xjp_oidc_axum::{OidcLayer, VerifiedClaims, AdminClaims, OptionalClaims, require_admin};
+use xjp_oidc::{JwtVerifier, NoOpCache, ReqwestHttpClient};
+use xjp_oidc_axum::{require_admin, AdminClaims, OidcLayer, OptionalClaims, VerifiedClaims};
 
 #[derive(Clone)]
 struct AppState {
@@ -42,9 +38,15 @@ async fn main() -> anyhow::Result<()> {
 
     // 配置 issuer 映射
     let mut issuer_map = HashMap::new();
-    issuer_map.insert("xiaojin".to_string(), "https://auth.xiaojinpro.com".to_string());
-    issuer_map.insert("google".to_string(), "https://accounts.google.com".to_string());
-    
+    issuer_map.insert(
+        "xiaojin".to_string(),
+        "https://auth.xiaojinpro.com".to_string(),
+    );
+    issuer_map.insert(
+        "google".to_string(),
+        "https://accounts.google.com".to_string(),
+    );
+
     // 创建 JWT 验证器
     let verifier = Arc::new(JwtVerifier::new(
         issuer_map,
@@ -53,34 +55,34 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(NoOpCache),
     ));
 
-    let state = AppState { verifier: verifier.clone() };
+    let state = AppState {
+        verifier: verifier.clone(),
+    };
 
     // 构建应用
     let app = Router::new()
         // 公开路由
         .route("/", get(root))
         .route("/health", get(health_check))
-        
         // 需要认证的路由（添加 JWT 验证中间件）
-        .nest("/api", 
+        .nest(
+            "/api",
             Router::new()
                 .route("/profile", get(get_profile))
                 .route("/protected", get(protected_resource))
-                .layer(OidcLayer::new(verifier.clone()))
+                .layer(OidcLayer::new(verifier.clone())),
         )
-        
         // 需要管理员权限的路由
-        .nest("/api/admin",
+        .nest(
+            "/api/admin",
             Router::new()
                 .route("/users", get(list_users))
                 .route("/settings", get(admin_settings))
                 .layer(middleware::from_fn(require_admin))
-                .layer(OidcLayer::new(verifier.clone()))
+                .layer(OidcLayer::new(verifier.clone())),
         )
-        
         // 可选认证路由
         .route("/api/public", get(public_with_optional_auth))
-        
         .with_state(state)
         .layer(
             ServiceBuilder::new()
@@ -129,7 +131,8 @@ async fn get_profile(claims: VerifiedClaims) -> Json<UserProfile> {
     Json(UserProfile {
         sub: claims.sub.clone(),
         email: claims.sub.clone().into(), // 示例：假设 sub 是 email
-        scopes: claims.scope
+        scopes: claims
+            .scope
             .as_ref()
             .map(|s| s.split_whitespace().map(String::from).collect())
             .unwrap_or_default(),
@@ -179,7 +182,7 @@ async fn list_users(_admin: AdminClaims) -> Json<Vec<User>> {
             role: "user".to_string(),
         },
     ];
-    
+
     Json(users)
 }
 
@@ -194,11 +197,11 @@ async fn admin_settings(_admin: AdminClaims) -> Json<AdminSettings> {
     let mut feature_flags = HashMap::new();
     feature_flags.insert("new_dashboard".to_string(), true);
     feature_flags.insert("beta_features".to_string(), false);
-    
+
     let mut rate_limits = HashMap::new();
     rate_limits.insert("api_requests_per_hour".to_string(), 1000);
     rate_limits.insert("uploads_per_day".to_string(), 100);
-    
+
     Json(AdminSettings {
         feature_flags,
         rate_limits,

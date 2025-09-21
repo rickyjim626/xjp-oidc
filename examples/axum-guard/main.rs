@@ -1,15 +1,8 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    middleware,
-    response::Json,
-    routing::get,
-    Router,
-};
+use axum::{extract::State, http::StatusCode, middleware, response::Json, routing::get, Router};
 use serde_json::json;
 use std::{net::SocketAddr, sync::Arc};
 use xjp_oidc::{JwtVerifier, MokaCacheImpl, ReqwestHttpClient};
-use xjp_oidc_axum::{require_admin, AdminClaims, OptionalClaims, OidcLayer, VerifiedClaims};
+use xjp_oidc_axum::{require_admin, AdminClaims, OidcLayer, OptionalClaims, VerifiedClaims};
 
 #[derive(Clone)]
 struct AppState {
@@ -21,18 +14,18 @@ struct AppState {
 async fn main() {
     // Load environment variables
     dotenvy::dotenv().ok();
-    
+
     let issuer = std::env::var("ISSUER").expect("ISSUER env var required");
     let audience = std::env::var("AUDIENCE").expect("AUDIENCE env var required");
-    
+
     // Create JWT verifier
     let http = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(1024));
-    
+
     // Create issuer map for multi-tenant support
     let mut issuer_map = std::collections::HashMap::new();
     issuer_map.insert("default".to_string(), issuer.clone());
-    
+
     let verifier = Arc::new(
         JwtVerifier::builder()
             .issuer_map(issuer_map)
@@ -44,33 +37,32 @@ async fn main() {
             .build()
             .expect("Failed to build JWT verifier"),
     );
-    
+
     // Create OIDC layer
     let oidc_layer = OidcLayer::new(verifier);
-    
+
     let state = AppState {
         dummy: "Resource Server".to_string(),
     };
-    
+
     // Build routes
     let public_routes = Router::new()
         .route("/", get(home))
         .route("/health", get(health));
-    
+
     let protected_routes = Router::new()
         .route("/api/profile", get(get_profile))
         .route("/api/data", get(get_data))
         .layer(oidc_layer.clone()); // Apply OIDC verification to all routes
-    
+
     let admin_routes = Router::new()
         .route("/api/admin/users", get(list_users))
         .route("/api/admin/settings", get(admin_settings))
         .layer(middleware::from_fn(require_admin)) // Add admin guard
         .layer(oidc_layer); // Apply OIDC verification first
-    
-    let optional_auth_routes = Router::new()
-        .route("/api/optional", get(optional_endpoint));
-    
+
+    let optional_auth_routes = Router::new().route("/api/optional", get(optional_endpoint));
+
     // Combine all routes
     let app = Router::new()
         .merge(public_routes)
@@ -78,10 +70,10 @@ async fn main() {
         .merge(admin_routes)
         .merge(optional_auth_routes)
         .with_state(state);
-    
+
     let addr: SocketAddr = "0.0.0.0:3001".parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    
+
     println!("Resource Server listening on http://{}", addr);
     println!("\nEndpoints:");
     println!("  Public:");
@@ -95,8 +87,10 @@ async fn main() {
     println!("    GET /api/admin/settings - Admin settings");
     println!("  Optional auth:");
     println!("    GET /api/optional  - Works with or without auth");
-    println!("\nTest with: curl -H 'Authorization: Bearer YOUR_JWT' http://localhost:3001/api/profile");
-    
+    println!(
+        "\nTest with: curl -H 'Authorization: Bearer YOUR_JWT' http://localhost:3001/api/profile"
+    );
+
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -109,7 +103,10 @@ async fn health() -> StatusCode {
 }
 
 // Protected endpoints - require valid JWT
-async fn get_profile(claims: VerifiedClaims, State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn get_profile(
+    claims: VerifiedClaims,
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
     println!("Profile accessed by: {}", claims.sub);
     Json(json!({
         "server": state.dummy,
@@ -167,7 +164,10 @@ async fn admin_settings(admin: AdminClaims) -> Json<serde_json::Value> {
 async fn optional_endpoint(claims: OptionalClaims) -> Json<serde_json::Value> {
     match claims.0 {
         Some(verified_claims) => {
-            println!("Optional endpoint accessed by authenticated user: {}", verified_claims.sub);
+            println!(
+                "Optional endpoint accessed by authenticated user: {}",
+                verified_claims.sub
+            );
             Json(json!({
                 "message": format!("Hello, {}!", verified_claims.sub),
                 "authenticated": true

@@ -8,12 +8,12 @@ use crate::{
     jwks::{Jwk, Jwks},
     types::{VerifiedIdToken, VerifyOptions},
 };
+use base64::{engine::general_purpose, Engine as _};
 use josekit::{
     jws::RS256,
     jwt::{self, JwtPayload},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use base64::{Engine as _, engine::general_purpose};
 
 /// Default JWKS cache TTL (10 minutes)
 const DEFAULT_JWKS_CACHE_TTL: u64 = 600;
@@ -51,16 +51,12 @@ const DEFAULT_JWKS_CACHE_TTL: u64 = 600;
         has_nonce = opts.nonce.is_some(),
     )
 )]
-pub async fn verify_id_token(
-    id_token: &str,
-    opts: VerifyOptions<'_>,
-) -> Result<VerifiedIdToken> {
+pub async fn verify_id_token(id_token: &str, opts: VerifyOptions<'_>) -> Result<VerifiedIdToken> {
     tracing::debug!(target: "xjp_oidc::token", "开始验证 ID Token");
-    
+
     // Extract kid from token header
-    let kid = extract_kid(id_token)?
-        .ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
-    
+    let kid = extract_kid(id_token)?.ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
+
     tracing::trace!(target: "xjp_oidc::token", kid = %kid, "提取 kid 成功");
 
     // Discover metadata and get JWKS
@@ -96,11 +92,8 @@ fn extract_kid(jwt: &str) -> Result<Option<String>> {
 
     let header_value: serde_json::Value = serde_json::from_slice(&header_bytes)
         .map_err(|e| Error::Jwt(format!("Failed to parse header JSON: {}", e)))?;
-    
-    Ok(header_value
-        .get("kid")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string()))
+
+    Ok(header_value.get("kid").and_then(|v| v.as_str()).map(|s| s.to_string()))
 }
 
 /// Fetch JWKS from the endpoint
@@ -120,7 +113,7 @@ pub async fn fetch_jwks(
         .get_value(jwks_uri)
         .await
         .map_err(|e| Error::Jwks(format!("Failed to fetch JWKS: {}", e)))?;
-        
+
     let jwks: Jwks = serde_json::from_value(value)
         .map_err(|e| Error::Jwks(format!("Failed to parse JWKS: {}", e)))?;
 
@@ -154,22 +147,14 @@ fn extract_and_validate_claims(
     payload: JwtPayload,
     opts: VerifyOptions<'_>,
 ) -> Result<VerifiedIdToken> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let clock_skew = opts.clock_skew_sec.unwrap_or(0);
 
     // Extract standard claims
-    let iss = payload
-        .issuer()
-        .ok_or_else(|| Error::Verification("Missing iss claim".into()))?;
-    let sub = payload
-        .subject()
-        .ok_or_else(|| Error::Verification("Missing sub claim".into()))?;
-    let aud = payload
+    let iss = payload.issuer().ok_or_else(|| Error::Verification("Missing iss claim".into()))?;
+    let sub = payload.subject().ok_or_else(|| Error::Verification("Missing sub claim".into()))?;
+    let aud_list = payload
         .audience()
-        .and_then(|a| a.first().map(|s| s.to_string()))
         .ok_or_else(|| Error::Verification("Missing aud claim".into()))?;
     let exp = payload
         .expires_at()
@@ -192,11 +177,12 @@ fn extract_and_validate_claims(
         )));
     }
 
-    // Validate audience
-    if aud != opts.audience {
+    // Validate audience - check if expected audience is in the list
+    let audience_valid = aud_list.iter().any(|a| a == &opts.audience);
+    if !audience_valid {
         return Err(Error::Verification(format!(
-            "Invalid audience: expected '{}', got '{}'",
-            opts.audience, aud
+            "Invalid audience: expected '{}' not found in '{:?}'",
+            opts.audience, aud_list
         )));
     }
 
@@ -214,14 +200,8 @@ fn extract_and_validate_claims(
     let claims_map = payload.claims_set();
 
     // Extract optional standard claims
-    let nonce = claims_map
-        .get("nonce")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let sid = claims_map
-        .get("sid")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let nonce = claims_map.get("nonce").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let sid = claims_map.get("sid").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     // Validate nonce if provided
     if let Some(expected_nonce) = opts.nonce {
@@ -232,33 +212,19 @@ fn extract_and_validate_claims(
     }
 
     // Extract profile claims
-    let name = claims_map
-        .get("name")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let email = claims_map
-        .get("email")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let picture = claims_map
-        .get("picture")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let name = claims_map.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let email = claims_map.get("email").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let picture = claims_map.get("picture").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     // Extract custom claims
-    let amr = claims_map
-        .get("amr")
-        .and_then(|v| {
-            v.as_array()?.iter()
-                .map(|item| item.as_str().map(|s| s.to_string()))
-                .collect::<Option<Vec<String>>>()
-        });
-    let auth_time = claims_map
-        .get("auth_time")
-        .and_then(|v| v.as_i64());
-    let xjp_admin = claims_map
-        .get("xjp_admin")
-        .and_then(|v| v.as_bool());
+    let amr = claims_map.get("amr").and_then(|v| {
+        v.as_array()?
+            .iter()
+            .map(|item| item.as_str().map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+    });
+    let auth_time = claims_map.get("auth_time").and_then(|v| v.as_i64());
+    let xjp_admin = claims_map.get("xjp_admin").and_then(|v| v.as_bool());
 
     // Validate auth_time if max_age is specified
     if let Some(max_age) = opts.max_age_sec {
@@ -274,7 +240,7 @@ fn extract_and_validate_claims(
     Ok(VerifiedIdToken {
         iss: iss.to_string(),
         sub: sub.to_string(),
-        aud: aud.to_string(),
+        aud: opts.audience.to_string(), // Use the verified expected audience
         exp,
         iat,
         nonce,
@@ -296,7 +262,7 @@ mod tests {
     fn test_extract_kid() {
         // This is a dummy JWT for testing - not a real token
         let token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20ifQ.dummy";
-        
+
         let kid = extract_kid(token).unwrap();
         assert_eq!(kid, Some("test-key".to_string()));
     }

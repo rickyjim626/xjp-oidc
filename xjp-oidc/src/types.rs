@@ -83,7 +83,7 @@ pub struct VerifiedIdToken {
     /// Session ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sid: Option<String>,
-    
+
     // Profile claims
     /// User's full name
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,7 +94,7 @@ pub struct VerifiedIdToken {
     /// User's picture URL
     #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
-    
+
     // Custom claims
     /// Authentication methods reference (e.g., ["wechat_qr"])
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,6 +130,9 @@ pub struct BuildAuthUrl {
     pub extra_params: Option<HashMap<String, String>>,
     /// Tenant identifier (for multi-tenant setups)
     pub tenant: Option<String>,
+    /// Optional authorization endpoint from discovery metadata
+    #[cfg_attr(not(feature = "verifier"), serde(skip_serializing_if = "Option::is_none"))]
+    pub authorization_endpoint: Option<String>,
 }
 
 /// Parameters for exchanging authorization code
@@ -147,6 +150,9 @@ pub struct ExchangeCode {
     pub code_verifier: String,
     /// Client secret (for confidential clients)
     pub client_secret: Option<String>,
+    /// Token endpoint authentication method from discovery metadata
+    /// (e.g., "client_secret_basic", "client_secret_post", "none")
+    pub token_endpoint_auth_method: Option<String>,
 }
 
 /// Parameters for end session (logout)

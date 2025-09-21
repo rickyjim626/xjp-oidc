@@ -138,10 +138,7 @@ impl Default for AdminGuard {
 }
 
 /// Admin guard middleware function
-pub async fn require_admin(
-    req: Request,
-    next: Next,
-) -> Result<Response, AuthError> {
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, AuthError> {
     // Check if claims exist in extensions
     let has_admin = req
         .extensions()

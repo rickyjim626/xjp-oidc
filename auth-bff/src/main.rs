@@ -7,16 +7,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use tower_sessions::{
-    SessionManagerLayer,
-    MemoryStore,
-};
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{CorsLayer, Any},
+    cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
+use tower_sessions::{MemoryStore, SessionManagerLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
@@ -38,8 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create session store
     let session_store = MemoryStore::default();
-    let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false); // 开发环境设为 false，生产环境应设为 true
+    let session_layer = SessionManagerLayer::new(session_store).with_secure(false); // 开发环境设为 false，生产环境应设为 true
 
     // Build application
     let app = Router::new()

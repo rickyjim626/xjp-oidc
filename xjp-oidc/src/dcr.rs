@@ -59,7 +59,7 @@ pub async fn register_if_needed(
 ) -> Result<ClientRegistrationResult> {
     // Validate parameters
     validate_register_params(&req)?;
-    
+
     if issuer.is_empty() {
         return Err(Error::InvalidParam("issuer cannot be empty"));
     }
@@ -70,7 +70,7 @@ pub async fn register_if_needed(
     // Get registration endpoint from discovery
     let cache = crate::cache::NoOpCache;
     let metadata = discover(issuer, http, &cache).await?;
-    
+
     let registration_endpoint = metadata
         .registration_endpoint
         .ok_or_else(|| Error::Discovery("Registration endpoint not found in metadata".into()))?;
@@ -86,14 +86,14 @@ pub async fn register_if_needed(
         .post_json_value(&registration_endpoint, &request_body, auth_header)
         .await
         .map_err(|e| {
-            // Try to parse DCR-specific errors
-            if let crate::http::HttpClientError::InvalidStatus { status: _, message } = &e {
-                if let Ok(dcr_error) = serde_json::from_str::<DcrError>(&message) {
-                    return map_dcr_error(dcr_error);
-                }
+        // Try to parse DCR-specific errors
+        if let crate::http::HttpClientError::InvalidStatus { status: _, message } = &e {
+            if let Ok(dcr_error) = serde_json::from_str::<DcrError>(&message) {
+                return map_dcr_error(dcr_error);
             }
-            Error::Network(format!("Client registration failed: {}", e))
-        })?;
+        }
+        Error::Network(format!("Client registration failed: {}", e))
+    })?;
 
     // Parse response
     parse_registration_response(response)
@@ -105,16 +105,15 @@ fn validate_register_params(req: &RegisterRequest) -> Result<()> {
     if req.redirect_uris.is_empty() {
         return Err(Error::InvalidParam("redirect_uris cannot be empty"));
     }
-    
+
     for uri in &req.redirect_uris {
         if uri.is_empty() {
             return Err(Error::InvalidParam("redirect_uri cannot be empty"));
         }
         // Validate URL format
-        url::Url::parse(uri)
-            .map_err(|_| Error::InvalidParam("invalid redirect_uri format"))?;
+        url::Url::parse(uri).map_err(|_| Error::InvalidParam("invalid redirect_uri format"))?;
     }
-    
+
     if let Some(logout_uris) = &req.post_logout_redirect_uris {
         for uri in logout_uris {
             if !uri.is_empty() {
@@ -123,15 +122,15 @@ fn validate_register_params(req: &RegisterRequest) -> Result<()> {
             }
         }
     }
-    
+
     if req.grant_types.is_empty() {
         return Err(Error::InvalidParam("grant_types cannot be empty"));
     }
-    
+
     if req.token_endpoint_auth_method.is_empty() {
         return Err(Error::InvalidParam("token_endpoint_auth_method cannot be empty"));
     }
-    
+
     Ok(())
 }
 
@@ -145,29 +144,29 @@ fn prepare_registration_request(req: RegisterRequest) -> serde_json::Value {
         "scope": req.scope,
         "response_types": ["code"], // Default to authorization code flow
     });
-    
+
     let obj = body.as_object_mut().unwrap();
-    
+
     if let Some(app_type) = req.application_type {
         obj.insert("application_type".to_string(), serde_json::json!(app_type));
     }
-    
+
     if let Some(logout_uris) = req.post_logout_redirect_uris {
         obj.insert("post_logout_redirect_uris".to_string(), serde_json::json!(logout_uris));
     }
-    
+
     if let Some(contacts) = req.contacts {
         obj.insert("contacts".to_string(), serde_json::json!(contacts));
     }
-    
+
     if let Some(software_id) = req.software_id {
         obj.insert("software_id".to_string(), serde_json::json!(software_id));
     }
-    
+
     if let Some(client_name) = req.client_name {
         obj.insert("client_name".to_string(), serde_json::json!(client_name));
     }
-    
+
     body
 }
 
@@ -179,11 +178,9 @@ fn parse_registration_response(response: serde_json::Value) -> Result<ClientRegi
         .as_str()
         .ok_or_else(|| Error::InvalidState("Missing client_id in response".into()))?
         .to_string();
-        
-    let client_secret = response["client_secret"]
-        .as_str()
-        .map(|s| s.to_string());
-        
+
+    let client_secret = response["client_secret"].as_str().map(|s| s.to_string());
+
     // Determine status from response
     let status = if let Some(status_str) = response["status"].as_str() {
         match status_str {
@@ -200,51 +197,30 @@ fn parse_registration_response(response: serde_json::Value) -> Result<ClientRegi
             ClientStatus::Pending
         }
     };
-    
-    let client_name = response["client_name"]
-        .as_str()
-        .unwrap_or(&client_id)
-        .to_string();
-        
+
+    let client_name = response["client_name"].as_str().unwrap_or(&client_id).to_string();
+
     let redirect_uris = response["redirect_uris"]
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
         .unwrap_or_default();
-        
+
     let post_logout_redirect_uris = response["post_logout_redirect_uris"]
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect()
-        });
-        
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect());
+
     let grant_types = response["grant_types"]
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
         .unwrap_or_else(|| vec!["authorization_code".to_string()]);
-        
+
     let token_endpoint_auth_method = response["token_endpoint_auth_method"]
         .as_str()
         .unwrap_or("client_secret_basic")
         .to_string();
-        
-    let scope = response["scope"]
-        .as_str()
-        .unwrap_or("openid profile email")
-        .to_string();
-    
+
+    let scope = response["scope"].as_str().unwrap_or("openid profile email").to_string();
+
     Ok(ClientRegistrationResult {
         client_id,
         client_secret,
@@ -308,13 +284,10 @@ mod tests {
         };
         assert!(validate_register_params(&valid).is_ok());
 
-        let invalid = RegisterRequest {
-            redirect_uris: vec![],
-            ..valid.clone()
-        };
+        let invalid = RegisterRequest { redirect_uris: vec![], ..valid.clone() };
         assert!(validate_register_params(&invalid).is_err());
     }
-    
+
     #[test]
     fn test_prepare_registration_request() {
         let req = RegisterRequest {
@@ -328,9 +301,9 @@ mod tests {
             software_id: Some("my-app".into()),
             client_name: Some("My Application".into()),
         };
-        
+
         let body = prepare_registration_request(req);
-        
+
         assert_eq!(body["application_type"], "web");
         assert_eq!(body["redirect_uris"][0], "https://app.example.com/callback");
         assert_eq!(body["grant_types"][0], "authorization_code");

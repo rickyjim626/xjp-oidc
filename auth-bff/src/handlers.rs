@@ -3,22 +3,23 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use tower_sessions::Session;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower_sessions::Session;
 
 use xjp_oidc::{
-    build_auth_url, create_pkce, exchange_code, parse_callback_params, verify_id_token,
-    build_end_session_url, discover,
-    types::{BuildAuthUrl, ExchangeCode, VerifyOptions, EndSession},
+    build_auth_url, build_end_session_url, create_pkce, discover, exchange_code,
+    parse_callback_params,
+    types::{BuildAuthUrl, EndSession, ExchangeCode, VerifyOptions},
+    verify_id_token,
 };
 
 use crate::{
     config::Config,
     error::{AppError, Result},
     session::{
-        clear_auth_state, clear_session, get_auth_state, get_tokens, get_user,
-        store_auth_state, store_user, SessionTokens, SessionUser,
+        clear_auth_state, clear_session, get_auth_state, get_tokens, get_user, store_auth_state,
+        store_user, SessionTokens, SessionUser,
     },
 };
 
@@ -43,10 +44,10 @@ pub async fn get_login_url(
 ) -> Result<Json<LoginUrlResponse>> {
     // 创建 PKCE
     let (verifier, challenge, _) = create_pkce()?;
-    
+
     // 保存状态到会话
     let state = store_auth_state(&session, verifier).await?;
-    
+
     // 构建授权 URL
     let auth_url = build_auth_url(BuildAuthUrl {
         issuer: config.oidc_issuer.clone(),
@@ -57,7 +58,7 @@ pub async fn get_login_url(
         code_challenge: challenge,
         ..Default::default()
     })?;
-    
+
     Ok(Json(LoginUrlResponse {
         auth_url: auth_url.to_string(),
     }))
@@ -82,31 +83,34 @@ pub async fn handle_callback(
 ) -> Result<Json<CallbackResponse>> {
     // 解析回调参数
     let params = parse_callback_params(&req.callback_params);
-    
+
     // 获取会话中的状态
     let (stored_state, nonce, pkce_verifier) = get_auth_state(&session).await?;
-    
+
     // 验证 state
     if params.state.as_ref() != Some(&stored_state) {
         return Err(AppError::BadRequest("Invalid state parameter".to_string()));
     }
-    
+
     // 清理临时状态
     clear_auth_state(&session).await?;
-    
+
     // 检查错误
     if let Some(error) = &params.error {
         return Err(AppError::BadRequest(format!(
             "OAuth error: {} - {}",
             error,
-            params.error_description.as_deref().unwrap_or("No description")
+            params
+                .error_description
+                .as_deref()
+                .unwrap_or("No description")
         )));
     }
-    
-    let code = params.code.ok_or_else(|| {
-        AppError::BadRequest("Missing authorization code".to_string())
-    })?;
-    
+
+    let code = params
+        .code
+        .ok_or_else(|| AppError::BadRequest("Missing authorization code".to_string()))?;
+
     // 发现端点
     let _discovery = discover(
         &config.oidc_issuer,
@@ -114,7 +118,7 @@ pub async fn handle_callback(
         config.discovery_cache.as_ref(),
     )
     .await?;
-    
+
     // 交换代码
     let token_params = ExchangeCode {
         issuer: config.oidc_issuer.clone(),
@@ -124,13 +128,15 @@ pub async fn handle_callback(
         code,
         code_verifier: pkce_verifier,
     };
-    
+
     let tokens = exchange_code(token_params, config.http_client.as_ref()).await?;
-    
+
     // 验证 ID Token
-    let id_token = tokens.id_token.as_ref()
+    let id_token = tokens
+        .id_token
+        .as_ref()
         .ok_or_else(|| AppError::BadRequest("Missing ID token".to_string()))?;
-    
+
     let verify_options = VerifyOptions {
         issuer: &config.oidc_issuer,
         audience: &config.client_id,
@@ -140,9 +146,9 @@ pub async fn handle_callback(
         http: config.http_client.as_ref(),
         cache: config.jwks_cache.as_ref(),
     };
-    
+
     let verified = verify_id_token(id_token, verify_options).await?;
-    
+
     // 创建用户会话
     let user = SessionUser {
         sub: verified.sub.clone(),
@@ -153,7 +159,7 @@ pub async fn handle_callback(
         auth_time: verified.auth_time,
         auth_methods: verified.amr.clone().unwrap_or_default(),
     };
-    
+
     let session_tokens = SessionTokens {
         id_token: id_token.clone(),
         access_token: tokens.access_token,
@@ -162,12 +168,13 @@ pub async fn handle_callback(
             (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_secs() + tokens.expires_in as u64) as i64
+                .as_secs()
+                + tokens.expires_in as u64) as i64,
         ),
     };
-    
+
     store_user(&session, user, session_tokens).await?;
-    
+
     Ok(Json(CallbackResponse {
         success: true,
         redirect_url: config.frontend_url.clone(),
@@ -187,7 +194,7 @@ pub struct UserResponse {
 
 pub async fn get_current_user(session: Session) -> Result<Json<UserResponse>> {
     let user = get_user(&session).await?;
-    
+
     Ok(Json(UserResponse {
         sub: user.sub,
         email: user.email,
@@ -224,7 +231,7 @@ pub async fn get_logout_url(
                 config.discovery_cache.as_ref(),
             )
             .await?;
-            
+
             discovery.end_session_endpoint.and_then(|_| {
                 build_end_session_url(EndSession {
                     issuer: config.oidc_issuer.clone(),
@@ -238,6 +245,6 @@ pub async fn get_logout_url(
         }
         Err(_) => None,
     };
-    
+
     Ok(Json(LogoutUrlResponse { logout_url }))
 }

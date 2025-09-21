@@ -82,10 +82,7 @@ pub enum Error {
 impl Error {
     /// Create an OAuth error from server response
     pub fn oauth(error: impl Into<String>, description: Option<String>) -> Self {
-        Self::OAuth {
-            error: error.into(),
-            description,
-        }
+        Self::OAuth { error: error.into(), description }
     }
 
     /// Check if this is a specific OAuth error code
@@ -102,10 +99,7 @@ impl Error {
 
     /// Check if this error is retryable
     pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::Network(_) | Self::Timeout | Self::Discovery(_) | Self::Jwks(_)
-        )
+        matches!(self, Self::Network(_) | Self::Timeout | Self::Discovery(_) | Self::Jwks(_))
     }
 }
 

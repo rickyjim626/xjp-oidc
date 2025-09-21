@@ -1,9 +1,13 @@
-use xjp_oidc::{JwtVerifier, MokaCacheImpl, Jwks, Jwk, ReqwestHttpClient};
+use josekit::{
+    jwk::Jwk as JosekitJwk,
+    jws::JwsHeader,
+    jwt::{self, JwtPayload},
+};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use josekit::{jwk::Jwk as JosekitJwk, jws::JwsHeader, jwt::{JwtPayload, self}};
-use serde_json::json;
 use time::{Duration, OffsetDateTime};
+use xjp_oidc::{Jwk, Jwks, JwtVerifier, MokaCacheImpl, ReqwestHttpClient};
 
 // Helper function to create a test RSA key pair
 fn create_test_keypair() -> (JosekitJwk, Jwk) {
@@ -12,7 +16,7 @@ fn create_test_keypair() -> (JosekitJwk, Jwk) {
     jwk.set_key_id("resource-key-1");
     jwk.set_algorithm(alg.name());
     jwk.set_key_use("sig");
-    
+
     let public_jwk = Jwk {
         kty: "RSA".to_string(),
         use_: "sig".to_string(),
@@ -24,20 +28,17 @@ fn create_test_keypair() -> (JosekitJwk, Jwk) {
         y: None,
         crv: None,
     };
-    
+
     (jwk, public_jwk)
 }
 
 // Helper function to create and sign a test access token
-fn create_signed_token(
-    jwk: &JosekitJwk,
-    claims: serde_json::Value,
-) -> String {
+fn create_signed_token(jwk: &JosekitJwk, claims: serde_json::Value) -> String {
     let mut header = JwsHeader::new();
     header.set_token_type("JWT");
     header.set_algorithm("RS256");
     header.set_key_id("resource-key-1");
-    
+
     let payload = JwtPayload::from_map(claims.as_object().unwrap().clone()).unwrap();
     let signer = josekit::jws::RS256.signer_from_jwk(jwk).unwrap();
     jwt::encode_with_signer(&payload, &header, &signer).unwrap()
@@ -48,10 +49,10 @@ fn create_signed_token(
 async fn test_jwt_verifier_basic() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     // Create test keypair
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup discovery endpoint
     let discovery_metadata = serde_json::json!({
         "issuer": mock_issuer,
@@ -63,41 +64,36 @@ async fn test_jwt_verifier_basic() {
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "id_token_signing_alg_values_supported": ["RS256"],
     });
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(discovery_metadata.to_string())
         .create_async()
         .await;
-    
+
     // Setup JWKS endpoint
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .expect(1) // Should only be called once due to caching
         .create_async()
         .await;
-    
+
     // Create verifier
     let http_client = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(100));
-    
+
     let mut issuer_map = HashMap::new();
     issuer_map.insert("test".to_string(), mock_issuer.clone());
-    
-    let verifier = JwtVerifier::new(
-        issuer_map,
-        "test-audience".to_string(),
-        http_client,
-        cache,
-    );
-    
+
+    let verifier = JwtVerifier::new(issuer_map, "test-audience".to_string(), http_client, cache);
+
     // Create valid access token
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -109,13 +105,13 @@ async fn test_jwt_verifier_basic() {
         "scope": "read write",
         "client_id": "test-client",
     });
-    
+
     let access_token = create_signed_token(&private_key, claims);
-    
+
     // Verify the token
     let result = verifier.verify(&access_token).await;
     assert!(result.is_ok(), "Verification failed: {:?}", result.err());
-    
+
     let verified = result.unwrap();
     assert_eq!(verified.iss, mock_issuer);
     assert_eq!(verified.sub, "user123");
@@ -129,9 +125,9 @@ async fn test_jwt_verifier_basic() {
 async fn test_jwt_verifier_multiple_audiences() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup discovery endpoint
     let discovery_metadata = serde_json::json!({
         "issuer": mock_issuer,
@@ -143,31 +139,31 @@ async fn test_jwt_verifier_multiple_audiences() {
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "id_token_signing_alg_values_supported": ["RS256"],
     });
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(discovery_metadata.to_string())
         .create_async()
         .await;
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let http_client = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(100));
-    
+
     let mut issuer_map = HashMap::new();
     issuer_map.insert("test".to_string(), mock_issuer.clone());
-    
+
     // Note: JwtVerifier only supports single audience
     let verifier = JwtVerifier::new(
         issuer_map,
@@ -175,7 +171,7 @@ async fn test_jwt_verifier_multiple_audiences() {
         http_client,
         cache,
     );
-    
+
     // Token with audience "api2"
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -185,9 +181,9 @@ async fn test_jwt_verifier_multiple_audiences() {
         "exp": (now + Duration::hours(1)).unix_timestamp(),
         "iat": now.unix_timestamp(),
     });
-    
+
     let access_token = create_signed_token(&private_key, claims);
-    
+
     let result = verifier.verify(&access_token).await;
     assert!(result.is_ok(), "Verification failed: {:?}", result.err());
 }
@@ -197,9 +193,9 @@ async fn test_jwt_verifier_multiple_audiences() {
 async fn test_jwt_verifier_expired_token() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup discovery endpoint
     let discovery_metadata = serde_json::json!({
         "issuer": mock_issuer,
@@ -211,38 +207,33 @@ async fn test_jwt_verifier_expired_token() {
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "id_token_signing_alg_values_supported": ["RS256"],
     });
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(discovery_metadata.to_string())
         .create_async()
         .await;
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let http_client = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(100));
-    
+
     let mut issuer_map = HashMap::new();
     issuer_map.insert("test".to_string(), mock_issuer.clone());
-    
-    let verifier = JwtVerifier::new(
-        issuer_map,
-        "test-api".to_string(),
-        http_client,
-        cache,
-    );
-    
+
+    let verifier = JwtVerifier::new(issuer_map, "test-api".to_string(), http_client, cache);
+
     // Create expired token
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -252,9 +243,9 @@ async fn test_jwt_verifier_expired_token() {
         "exp": (now - Duration::hours(1)).unix_timestamp(), // Expired
         "iat": (now - Duration::hours(2)).unix_timestamp(),
     });
-    
+
     let access_token = create_signed_token(&private_key, claims);
-    
+
     let result = verifier.verify(&access_token).await;
     assert!(result.is_err());
 }
@@ -264,9 +255,9 @@ async fn test_jwt_verifier_expired_token() {
 async fn test_jwt_verifier_wrong_issuer() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup discovery endpoint
     let discovery_metadata = serde_json::json!({
         "issuer": mock_issuer,
@@ -278,38 +269,33 @@ async fn test_jwt_verifier_wrong_issuer() {
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "id_token_signing_alg_values_supported": ["RS256"],
     });
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(discovery_metadata.to_string())
         .create_async()
         .await;
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
-    let _jwks_mock = server.mock("GET", "/jwks")
+
+    let jwks = Jwks { keys: vec![public_key] };
+
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .create_async()
         .await;
-    
+
     let http_client = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(100));
-    
+
     let mut issuer_map = HashMap::new();
     issuer_map.insert("test".to_string(), mock_issuer.clone());
-    
-    let verifier = JwtVerifier::new(
-        issuer_map,
-        "test-api".to_string(),
-        http_client,
-        cache,
-    );
-    
+
+    let verifier = JwtVerifier::new(issuer_map, "test-api".to_string(), http_client, cache);
+
     // Token with different issuer
     let now = OffsetDateTime::now_utc();
     let claims = json!({
@@ -319,9 +305,9 @@ async fn test_jwt_verifier_wrong_issuer() {
         "exp": (now + Duration::hours(1)).unix_timestamp(),
         "iat": now.unix_timestamp(),
     });
-    
+
     let access_token = create_signed_token(&private_key, claims);
-    
+
     let result = verifier.verify(&access_token).await;
     assert!(result.is_err());
 }
@@ -331,9 +317,9 @@ async fn test_jwt_verifier_wrong_issuer() {
 async fn test_jwt_verifier_caching() {
     let mut server = mockito::Server::new_async().await;
     let mock_issuer = server.url();
-    
+
     let (private_key, public_key) = create_test_keypair();
-    
+
     // Setup discovery endpoint
     let discovery_metadata = serde_json::json!({
         "issuer": mock_issuer,
@@ -345,40 +331,35 @@ async fn test_jwt_verifier_caching() {
         "token_endpoint_auth_methods_supported": ["client_secret_basic"],
         "id_token_signing_alg_values_supported": ["RS256"],
     });
-    
-    let _discovery_mock = server.mock("GET", "/.well-known/openid-configuration")
+
+    let _discovery_mock = server
+        .mock("GET", "/.well-known/openid-configuration")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(discovery_metadata.to_string())
         .create_async()
         .await;
-    
-    let jwks = Jwks {
-        keys: vec![public_key],
-    };
-    
+
+    let jwks = Jwks { keys: vec![public_key] };
+
     // Mock should only be called once due to caching
-    let _jwks_mock = server.mock("GET", "/jwks")
+    let _jwks_mock = server
+        .mock("GET", "/jwks")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(serde_json::to_string(&jwks).unwrap())
         .expect(1)
         .create_async()
         .await;
-    
+
     let http_client = Arc::new(ReqwestHttpClient::default());
     let cache = Arc::new(MokaCacheImpl::new(100));
-    
+
     let mut issuer_map = HashMap::new();
     issuer_map.insert("test".to_string(), mock_issuer.clone());
-    
-    let verifier = JwtVerifier::new(
-        issuer_map,
-        "cached-api".to_string(),
-        http_client,
-        cache,
-    );
-    
+
+    let verifier = JwtVerifier::new(issuer_map, "cached-api".to_string(), http_client, cache);
+
     // Create multiple tokens
     let now = OffsetDateTime::now_utc();
     for i in 0..5 {
@@ -389,11 +370,11 @@ async fn test_jwt_verifier_caching() {
             "exp": (now + Duration::hours(1)).unix_timestamp(),
             "iat": now.unix_timestamp(),
         });
-        
+
         let token = create_signed_token(&private_key, claims);
         let result = verifier.verify(&token).await;
         assert!(result.is_ok());
     }
-    
+
     // The JWKS endpoint should have been called only once
 }

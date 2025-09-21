@@ -1,5 +1,5 @@
-use tower_sessions::Session;
 use serde::{Deserialize, Serialize};
+use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -29,13 +29,10 @@ pub struct SessionUser {
     pub auth_methods: Vec<String>,
 }
 
-pub async fn store_auth_state(
-    session: &Session,
-    pkce_verifier: String,
-) -> Result<String> {
+pub async fn store_auth_state(session: &Session, pkce_verifier: String) -> Result<String> {
     let state = Uuid::new_v4().to_string();
     let nonce = Uuid::new_v4().to_string();
-    
+
     session
         .insert(SESSION_KEY_STATE, &state)
         .await
@@ -48,7 +45,7 @@ pub async fn store_auth_state(
         .insert(SESSION_KEY_PKCE, pkce_verifier)
         .await
         .map_err(|e| AppError::Session(format!("Failed to store PKCE verifier: {}", e)))?;
-    
+
     Ok(state)
 }
 
@@ -68,25 +65,27 @@ pub async fn get_auth_state(session: &Session) -> Result<(String, String, String
         .await
         .map_err(|e| AppError::Session(format!("Failed to get PKCE: {}", e)))?
         .ok_or_else(|| AppError::BadRequest("Missing PKCE verifier in session".to_string()))?;
-    
+
     Ok((state, nonce, pkce_verifier))
 }
 
 pub async fn clear_auth_state(session: &Session) -> Result<()> {
-    session.remove::<String>(SESSION_KEY_STATE).await
+    session
+        .remove::<String>(SESSION_KEY_STATE)
+        .await
         .map_err(|e| AppError::Session(format!("Failed to remove state: {}", e)))?;
-    session.remove::<String>(SESSION_KEY_NONCE).await
+    session
+        .remove::<String>(SESSION_KEY_NONCE)
+        .await
         .map_err(|e| AppError::Session(format!("Failed to remove nonce: {}", e)))?;
-    session.remove::<String>(SESSION_KEY_PKCE).await
+    session
+        .remove::<String>(SESSION_KEY_PKCE)
+        .await
         .map_err(|e| AppError::Session(format!("Failed to remove PKCE: {}", e)))?;
     Ok(())
 }
 
-pub async fn store_user(
-    session: &Session,
-    user: SessionUser,
-    tokens: SessionTokens,
-) -> Result<()> {
+pub async fn store_user(session: &Session, user: SessionUser, tokens: SessionTokens) -> Result<()> {
     session
         .insert(SESSION_KEY_USER, &user)
         .await
@@ -95,7 +94,7 @@ pub async fn store_user(
         .insert(SESSION_KEY_TOKENS, &tokens)
         .await
         .map_err(|e| AppError::Session(format!("Failed to store tokens: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -116,7 +115,9 @@ pub async fn get_tokens(session: &Session) -> Result<SessionTokens> {
 }
 
 pub async fn clear_session(session: &Session) -> Result<()> {
-    session.flush().await
+    session
+        .flush()
+        .await
         .map_err(|e| AppError::Session(format!("Failed to clear session: {}", e)))?;
     Ok(())
 }

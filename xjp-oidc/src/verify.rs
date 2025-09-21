@@ -12,6 +12,8 @@ use crate::{
 };
 
 #[cfg(feature = "verifier")]
+use base64::{engine::general_purpose, Engine as _};
+#[cfg(feature = "verifier")]
 use josekit::{
     jws::RS256,
     jwt::{self, JwtPayload},
@@ -20,8 +22,6 @@ use josekit::{
 use std::collections::HashMap;
 #[cfg(feature = "verifier")]
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(feature = "verifier")]
-use base64::{Engine as _, engine::general_purpose};
 
 /// JWT Verifier for Resource Server
 #[cfg(feature = "verifier")]
@@ -49,14 +49,7 @@ impl<C: Cache<String, Jwks>, H: HttpClient> JwtVerifier<C, H> {
         http: std::sync::Arc<H>,
         cache: std::sync::Arc<C>,
     ) -> Self {
-        Self {
-            issuer_map,
-            audience,
-            http,
-            cache,
-            clock_skew_sec: 60,
-            default_issuer: None,
-        }
+        Self { issuer_map, audience, http, cache, clock_skew_sec: 60, default_issuer: None }
     }
 
     /// Create a verifier builder
@@ -68,29 +61,28 @@ impl<C: Cache<String, Jwks>, H: HttpClient> JwtVerifier<C, H> {
     pub async fn verify(&self, bearer: &str) -> Result<VerifiedClaims> {
         // Remove "Bearer " prefix if present
         let token = bearer.strip_prefix("Bearer ").unwrap_or(bearer);
-        
+
         // Try to extract issuer from token payload (unverified)
         let unverified_issuer = extract_unverified_issuer(token)?;
-        
+
         // Determine expected issuer
         let expected_issuer = self.resolve_issuer(&unverified_issuer)?;
-        
+
         // Get JWKS for the issuer
         // Use NoOpCache for metadata discovery - JWKS are the important thing to cache
         let metadata_cache = crate::cache::NoOpCache;
         let metadata = discover(&expected_issuer, self.http.as_ref(), &metadata_cache).await?;
         let jwks = fetch_jwks(&metadata.jwks_uri, self.http.as_ref(), self.cache.as_ref()).await?;
-        
+
         // Verify token - extract kid manually
-        let kid = extract_kid(token)?
-            .ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
-            
+        let kid = extract_kid(token)?.ok_or_else(|| Error::Jwt("Token missing kid".into()))?;
+
         let jwk = jwks
             .find_key(&kid)
             .ok_or_else(|| Error::Jwt(format!("Key with kid '{}' not found", kid)))?;
-            
+
         let payload = verify_token_signature(token, jwk)?;
-        
+
         // Extract and validate claims
         let claims = extract_and_validate_access_token_claims(
             payload,
@@ -98,27 +90,47 @@ impl<C: Cache<String, Jwks>, H: HttpClient> JwtVerifier<C, H> {
             &self.audience,
             self.clock_skew_sec,
         )?;
-        
+
         Ok(claims)
     }
 
     /// Resolve issuer from token or mapping
     fn resolve_issuer(&self, token_issuer: &str) -> Result<String> {
-        // First check if token issuer is in our allowed list
+        // Check if token issuer is directly in our allowed list (as a value)
         if self.issuer_map.values().any(|v| v == token_issuer) {
             return Ok(token_issuer.to_string());
         }
-        
+
+        // Check if token issuer matches any mapped tenant/host key
+        // This supports cases where the key is the issuer itself
+        if self.issuer_map.contains_key(token_issuer) {
+            return Ok(self.issuer_map[token_issuer].clone());
+        }
+
         // Otherwise use default issuer if configured
         if let Some(default) = &self.default_issuer {
             return Ok(default.clone());
         }
-        
+
         // If no default, reject the token
-        Err(Error::Verification(format!(
-            "Issuer '{}' not in allowed list",
-            token_issuer
-        )))
+        Err(Error::Verification(format!("Issuer '{}' not in allowed list", token_issuer)))
+    }
+
+    /// Resolve issuer with tenant context
+    /// This method allows multi-tenant routing by selecting issuer based on tenant identifier
+    pub fn resolve_issuer_with_tenant(&self, tenant: &str) -> Result<String> {
+        // Look up issuer for the given tenant
+        if let Some(issuer) = self.issuer_map.get(tenant) {
+            return Ok(issuer.clone());
+        }
+
+        // Fall back to default issuer if configured
+        if let Some(default) = &self.default_issuer {
+            return Ok(default.clone());
+        }
+
+        // No issuer found for tenant
+        Err(Error::Verification(format!("No issuer configured for tenant '{}'", tenant)))
     }
 }
 
@@ -212,11 +224,8 @@ fn extract_kid(jwt: &str) -> Result<Option<String>> {
 
     let header_value: serde_json::Value = serde_json::from_slice(&header_bytes)
         .map_err(|e| Error::Jwt(format!("Failed to parse header JSON: {}", e)))?;
-    
-    Ok(header_value
-        .get("kid")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string()))
+
+    Ok(header_value.get("kid").and_then(|v| v.as_str()).map(|s| s.to_string()))
 }
 
 /// Extract issuer from unverified token
@@ -232,7 +241,7 @@ fn extract_unverified_issuer(token: &str) -> Result<String> {
         .map_err(|e| Error::Base64(e.to_string()))?;
 
     let payload: serde_json::Value = serde_json::from_slice(&payload_json)?;
-    
+
     payload["iss"]
         .as_str()
         .ok_or_else(|| Error::Jwt("Token missing issuer".into()))
@@ -267,18 +276,11 @@ fn extract_and_validate_access_token_claims(
     expected_audience: &str,
     clock_skew: i64,
 ) -> Result<VerifiedClaims> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
 
     // Extract standard claims
-    let iss = payload
-        .issuer()
-        .ok_or_else(|| Error::Verification("Missing iss claim".into()))?;
-    let sub = payload
-        .subject()
-        .ok_or_else(|| Error::Verification("Missing sub claim".into()))?;
+    let iss = payload.issuer().ok_or_else(|| Error::Verification("Missing iss claim".into()))?;
+    let sub = payload.subject().ok_or_else(|| Error::Verification("Missing sub claim".into()))?;
     let exp = payload
         .expires_at()
         .ok_or_else(|| Error::Verification("Missing exp claim".into()))?
@@ -325,33 +327,21 @@ fn extract_and_validate_access_token_claims(
 
     // Extract custom claims
     let claims_map = payload.claims_set();
-    
-    let jti = claims_map
-        .get("jti")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-        
-    let scope = claims_map
-        .get("scope")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-        
-    let xjp_admin = claims_map
-        .get("xjp_admin")
-        .and_then(|v| v.as_bool());
-        
-    let amr = claims_map
-        .get("amr")
-        .and_then(|v| {
-            v.as_array()?.iter()
-                .map(|item| item.as_str().map(|s| s.to_string()))
-                .collect::<Option<Vec<String>>>()
-        });
-        
-    let auth_time = claims_map
-        .get("auth_time")
-        .and_then(|v| v.as_i64());
+
+    let jti = claims_map.get("jti").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    let scope = claims_map.get("scope").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    let xjp_admin = claims_map.get("xjp_admin").and_then(|v| v.as_bool());
+
+    let amr = claims_map.get("amr").and_then(|v| {
+        v.as_array()?
+            .iter()
+            .map(|item| item.as_str().map(|s| s.to_string()))
+            .collect::<Option<Vec<String>>>()
+    });
+
+    let auth_time = claims_map.get("auth_time").and_then(|v| v.as_i64());
 
     Ok(VerifiedClaims {
         iss: iss.to_string(),
@@ -375,7 +365,7 @@ mod tests {
     fn test_extract_unverified_issuer() {
         // This is a dummy JWT for testing - not a real token
         let token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20ifQ.dummy";
-        
+
         let issuer = extract_unverified_issuer(token).unwrap();
         assert_eq!(issuer, "https://auth.example.com");
     }
