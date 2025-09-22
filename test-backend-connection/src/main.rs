@@ -13,7 +13,7 @@ use xjp_oidc::{
     VerifyOptions,
 };
 
-const ISSUER: &str = "https://auth-test.xiaojinpro.com";
+const ISSUER: &str = "https://auth.xiaojinpro.com";
 const CLIENT_ID_WEB: &str = "xjp-web";
 const CLIENT_SECRET_WEB: &str = "dev_secret_change_in_production";
 const CLIENT_ID_CLI: &str = "xjp-cli";

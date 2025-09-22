@@ -13,12 +13,12 @@
 
 ## OIDC 基础信息（小金保测试环境）
 
-- **Issuer/Discovery**：`https://auth-test.xiaojinpro.com`（Caddy 反向代理并自动签发证书，HTTP `:80` 会 308 重定向，内部仍转发至 `127.0.0.1:8081`），标准 `/.well-known/openid-configuration` 已启用，核心端点包括 `/oauth2/authorize`、`/oauth2/token`、`/oidc/userinfo`、`/.well-known/jwks.json`、`/oauth2/revoke`、`/oauth2/introspect`
+- **Issuer/Discovery**：`https://auth.xiaojinpro.com`（Caddy 反向代理并自动签发证书，HTTP `:80` 会 308 重定向，内部仍转发至 `127.0.0.1:8081`），标准 `/.well-known/openid-configuration` 已启用，核心端点包括 `/oauth2/authorize`、`/oauth2/token`、`/oidc/userinfo`、`/.well-known/jwks.json`、`/oauth2/revoke`、`/oauth2/introspect`
 - **客户端凭据**：`xjp-web`（confidential，`client_secret_basic`，支持 `client_secret_post`/`none` 但未启用，Secret=`dev_secret_change_in_production` 仅限测试）、`xjp-cli`（public，`none`，无 Client Secret）
 - **重定向 URI**：`xjp-web` → `http://localhost:3000/auth/callback`、`https://app.example.com/auth/callback`；`xjp-cli` → `http://localhost:9876/callback`
 - **默认 Scope**：`openid profile email offline_access`
 - **Token Claims**：`aud` 等于请求的 `client_id`；额外支持 `amr`（如 `["wechat_qr"]`）、`xjp_admin`（布尔）、`auth_time`（UNIX 秒）等自定义声明，并按用户记录返回 `scope`、`sid`、`name`、`email`、`picture`
-- **环境集成**：已配置微信登录（AppID=`wx04971a76992f4fd0`，回调 `https://auth-test.xiaojinpro.com/auth/wechat/callback`）；CORS 允许来源 `https://app-test.xiaojinpro.com`；对外提供 HTTPS，8081 端口仍保留向内兼容；`/metrics` 默认开放；如需测试账号需手动在 `users` 表或后台创建
+- **环境集成**：已配置微信登录（AppID=`wx04971a76992f4fd0`，回调 `https://auth.xiaojinpro.com/auth/wechat/callback`）；CORS 允许来源 `https://auth.xiaojinpro.com`；对外提供 HTTPS，8081 端口仍保留向内兼容；`/metrics` 默认开放；如需测试账号需手动在 `users` 表或后台创建
 - **高级功能**：启用动态注册 `POST /oauth2/register`（`FEATURE_DCR_ENABLED=true`）；可选客户端审批（默认关闭）；多租户路由 `/oidc/*` 已预置，当前仅默认租户 `xiaojinpro`
 - **后续建议**：如需正式回调域名或登出回调，可在后台更新 `oauth_clients` 并同步 `.env.production` CORS 列表；需 HTTPS 时可通过反向代理（如 Caddy/Nginx）终止 TLS，并更新 Issuer/Redirect URI；必要时生成初始注册令牌（`client_registration_tokens` 表存哈希）以配合 DCR
 
