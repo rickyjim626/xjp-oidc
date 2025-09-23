@@ -1,0 +1,10 @@
+[package]
+name = "test-tenant-discovery"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xjp-oidc = { path = "../../xjp-oidc", features = ["http-reqwest"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

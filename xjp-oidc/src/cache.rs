@@ -35,6 +35,28 @@ impl<K, V> Cache<K, V> for NoOpCache {
     fn clear(&self) {}
 }
 
+/// Simple in-memory cache implementation (for testing/examples)
+#[derive(Clone)]
+pub struct MemoryCache;
+
+impl<K, V> Cache<K, V> for MemoryCache {
+    fn get(&self, _key: &K) -> Option<V> {
+        // Simple implementation - always returns None for now
+        // In production, use LruCacheImpl or MokaCacheImpl
+        None
+    }
+
+    fn put(&self, _key: K, _value: V, _ttl_secs: u64) {
+        // No-op for simple implementation
+    }
+
+    fn remove(&self, _key: &K) -> Option<V> {
+        None
+    }
+
+    fn clear(&self) {}
+}
+
 /// Simple LRU cache implementation
 #[cfg(feature = "lru")]
 pub struct LruCacheImpl<K: std::hash::Hash + Eq + Clone, V: Clone> {

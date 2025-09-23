@@ -41,6 +41,12 @@ pub struct OidcProviderMetadata {
     /// PKCE code challenge methods supported
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_challenge_methods_supported: Option<Vec<String>>,
+    /// Tenant ID (for multi-tenant setups)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<i64>,
+    /// Tenant slug (for multi-tenant setups)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_slug: Option<String>,
 }
 
 /// Token response from token endpoint

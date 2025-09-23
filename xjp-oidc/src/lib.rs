@@ -59,6 +59,11 @@ mod id_token;
 mod jwks;
 mod pkce;
 
+// Multi-tenant support modules
+pub mod tenant;
+pub mod discovery_tenant;
+pub mod http_tenant;
+
 // Conditional compilation for verifier feature
 #[cfg(feature = "verifier")]
 mod verify;
@@ -68,7 +73,7 @@ pub use auth_url::{
     build_auth_url, build_auth_url_with_metadata, build_end_session_url,
     build_end_session_url_with_discovery, parse_callback_params,
 };
-pub use cache::{Cache, NoOpCache};
+pub use cache::{Cache, NoOpCache, MemoryCache};
 
 #[cfg(feature = "lru")]
 pub use cache::LruCacheImpl;
@@ -116,6 +121,12 @@ pub mod prelude {
         create_pkce, discover, parse_callback_params, verify_id_token, AuthUrlResult, BuildAuthUrl,
         CallbackParams, EndSession, Error, OidcProviderMetadata, TokenResponse,
         VerifiedIdToken, VerifyOptions,
+    };
+
+    // Multi-tenant support
+    pub use crate::{
+        tenant::{TenantConfig, TenantMode},
+        discovery_tenant::{discover_with_tenant, discover_with_tenant_simple},
     };
 
     #[cfg(not(target_arch = "wasm32"))]
