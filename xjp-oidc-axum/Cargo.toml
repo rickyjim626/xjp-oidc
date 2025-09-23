@@ -1,6 +1,6 @@
 [package]
 name = "xjp-oidc-axum"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.82"
 authors = ["XiaojinPro Team"]
@@ -14,7 +14,7 @@ keywords = ["oidc", "oauth2", "axum", "middleware", "authentication"]
 categories = ["authentication", "web-programming"]
 
 [dependencies]
-xjp-oidc = { path = "../xjp-oidc", version = "1.0.0-rc.1", features = ["verifier"] }
+xjp-oidc = { path = "../xjp-oidc", version = "1.0.0", features = ["verifier"] }
 axum = "0.7"
 axum-core = "0.4"
 axum-extra = { version = "0.9", features = ["typed-header"] }

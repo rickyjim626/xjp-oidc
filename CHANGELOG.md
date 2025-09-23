@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2025-01-23
+
+### Added
+- Server-Sent Events (SSE) support for real-time login status monitoring
+  - `start_login_session` function to create login sessions
+  - `subscribe_login_events` for SSE event streaming
+  - `check_login_status` for polling-based status checking
+  - Login status tracking (Pending, Scanned, Authorized, Success, Failed, Expired)
+  - Automatic reconnection and heartbeat support
+  - Example code demonstrating SSE usage
+- New `sse` feature flag for enabling SSE functionality
+- Complete implementation of all features mentioned in the integration documentation
+
+### Fixed
+- Multi-tenant ClientId mode now properly appends client_id to discovery URL
+
+### Dependencies
+- Added `eventsource-client` v0.12 for SSE support
+- Added `futures-util` v0.3 for stream processing
+- Added `tokio-stream` v0.1 for timeout handling
+
 ## [1.0.0-rc.1] - 2025-01-20
 
 ### Added
@@ -30,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nonce support for replay protection
 - Secure defaults throughout
 
-[unreleased]: https://github.com/xiaojinpro/xjp-oidc/compare/v1.0.0-rc.1...HEAD
+[unreleased]: https://github.com/xiaojinpro/xjp-oidc/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/xiaojinpro/xjp-oidc/compare/v1.0.0-rc.1...v1.0.0
 [1.0.0-rc.1]: https://github.com/xiaojinpro/xjp-oidc/releases/tag/v1.0.0-rc.1
