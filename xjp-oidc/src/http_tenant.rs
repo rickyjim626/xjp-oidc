@@ -1,14 +1,24 @@
 //! HTTP client extension for multi-tenant support
 
 use crate::{
-    discovery_tenant::HttpClientWithHeaders,
     errors::Result,
     http::{HttpClient, HttpClientError},
 };
 use async_trait::async_trait;
 use serde_json::Value;
 
-/// Adapter to add header support to existing HttpClient implementations
+/// Enhanced HTTP client trait with admin header support for multi-tenant
+#[async_trait]
+pub trait HttpClientWithAdminSupport: Send + Sync {
+    /// Perform a GET request with optional admin override header
+    async fn get_value_with_admin_override(
+        &self,
+        url: &str,
+        admin_tenant: Option<&str>,
+    ) -> Result<Value>;
+}
+
+/// Adapter to add admin header support to existing HttpClient implementations
 pub struct HttpClientAdapter<T: HttpClient> {
     inner: T,
 }
@@ -21,18 +31,18 @@ impl<T: HttpClient> HttpClientAdapter<T> {
 }
 
 #[async_trait]
-impl<T: HttpClient> HttpClientWithHeaders for HttpClientAdapter<T> {
-    async fn get_value_with_headers(
+impl<T: HttpClient> HttpClientWithAdminSupport for HttpClientAdapter<T> {
+    async fn get_value_with_admin_override(
         &self,
         url: &str,
-        headers: Vec<(String, String)>,
+        admin_tenant: Option<&str>,
     ) -> Result<Value> {
-        // For now, we'll use the standard get_value since headers need to be implemented
-        // in the underlying client. This is a temporary solution.
-        if !headers.is_empty() {
+        // For basic adapter, admin override is not supported
+        // This will just use the standard client
+        if admin_tenant.is_some() {
             tracing::warn!(
-                "Headers requested but not supported by underlying client: {:?}",
-                headers
+                "Admin tenant override requested but not supported by underlying client: {:?}",
+                admin_tenant
             );
         }
         self.inner
@@ -42,20 +52,22 @@ impl<T: HttpClient> HttpClientWithHeaders for HttpClientAdapter<T> {
     }
 }
 
-// Enhanced Reqwest implementation with header support
+/// Enhanced Reqwest implementation with header support
 #[cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))]
+#[cfg_attr(docsrs, doc(cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))))]
 pub mod reqwest_tenant {
     use super::*;
     use reqwest::{Client, header::{HeaderMap, HeaderName, HeaderValue}};
     use std::time::Duration;
 
-    /// Enhanced Reqwest HTTP client with multi-tenant support
+    /// Enhanced Reqwest HTTP client with admin override support
     #[derive(Clone)]
-    pub struct ReqwestHttpClientWithHeaders {
+    pub struct ReqwestHttpClientWithAdminSupport {
         client: Client,
+        admin_key: Option<String>,
     }
 
-    impl ReqwestHttpClientWithHeaders {
+    impl ReqwestHttpClientWithAdminSupport {
         /// Create a new HTTP client with default settings
         pub fn new() -> Result<Self> {
             let client = Client::builder()
@@ -64,7 +76,18 @@ pub mod reqwest_tenant {
                 .build()
                 .map_err(|e| crate::errors::Error::Network(e.to_string()))?;
 
-            Ok(Self { client })
+            Ok(Self { client, admin_key: None })
+        }
+
+        /// Create a new HTTP client with admin key support
+        pub fn with_admin_key(admin_key: String) -> Result<Self> {
+            let client = Client::builder()
+                .timeout(Duration::from_secs(30))
+                .use_rustls_tls()
+                .build()
+                .map_err(|e| crate::errors::Error::Network(e.to_string()))?;
+
+            Ok(Self { client, admin_key: Some(admin_key) })
         }
 
         /// Create a new HTTP client with custom timeout
@@ -75,44 +98,49 @@ pub mod reqwest_tenant {
                 .build()
                 .map_err(|e| crate::errors::Error::Network(e.to_string()))?;
 
-            Ok(Self { client })
+            Ok(Self { client, admin_key: None })
         }
     }
 
-    impl Default for ReqwestHttpClientWithHeaders {
+    impl Default for ReqwestHttpClientWithAdminSupport {
         fn default() -> Self {
             Self::new().expect("Failed to create default HTTP client")
         }
     }
 
     #[async_trait]
-    impl HttpClientWithHeaders for ReqwestHttpClientWithHeaders {
-        async fn get_value_with_headers(
+    impl HttpClientWithAdminSupport for ReqwestHttpClientWithAdminSupport {
+        async fn get_value_with_admin_override(
             &self,
             url: &str,
-            headers: Vec<(String, String)>,
+            admin_tenant: Option<&str>,
         ) -> Result<Value> {
             let mut request = self.client.get(url);
 
-            // Add custom headers
-            let header_count = headers.len();
-            if !headers.is_empty() {
+            // Add admin override headers if available
+            let mut header_added = false;
+            if let (Some(admin_key), Some(tenant)) = (&self.admin_key, admin_tenant) {
                 let mut header_map = HeaderMap::new();
-                for (key, value) in headers {
-                    let header_name = HeaderName::from_bytes(key.as_bytes())
-                        .map_err(|e| crate::errors::Error::Network(format!("Invalid header name: {}", e)))?;
-                    let header_value = HeaderValue::from_str(&value)
-                        .map_err(|e| crate::errors::Error::Network(format!("Invalid header value: {}", e)))?;
-                    header_map.insert(header_name, header_value);
-                }
+                
+                // Add admin key header
+                let admin_key_header = HeaderValue::from_str(admin_key)
+                    .map_err(|e| crate::errors::Error::Network(format!("Invalid admin key: {}", e)))?;
+                header_map.insert("x-admin-key", admin_key_header);
+                
+                // Add tenant override header
+                let tenant_header = HeaderValue::from_str(tenant)
+                    .map_err(|e| crate::errors::Error::Network(format!("Invalid tenant: {}", e)))?;
+                header_map.insert("x-admin-tenant", tenant_header);
+                
                 request = request.headers(header_map);
+                header_added = true;
             }
 
             tracing::info!(
                 target: "xjp_oidc::http",
-                "HTTP 请求: {} (headers: {})",
+                "HTTP 请求: {} (admin_override: {})",
                 url,
-                header_count
+                header_added
             );
 
             let response = request
@@ -162,7 +190,7 @@ pub mod reqwest_tenant {
 
     // Also implement the standard HttpClient trait
     #[async_trait]
-    impl HttpClient for ReqwestHttpClientWithHeaders {
+    impl HttpClient for ReqwestHttpClientWithAdminSupport {
         async fn get_value(&self, url: &str) -> std::result::Result<Value, HttpClientError> {
             let response = self
                 .client

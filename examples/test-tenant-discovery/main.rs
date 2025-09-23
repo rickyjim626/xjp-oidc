@@ -2,9 +2,9 @@
 
 use xjp_oidc::{
     cache::MemoryCache,
-    discovery_tenant::{discover_with_tenant, HttpClientWithHeaders},
-    http_tenant::reqwest_tenant::ReqwestHttpClientWithHeaders,
-    tenant::TenantConfig,
+    discovery_tenant::{discover_with_tenant, discover_with_tenant_resolution},
+    http_tenant::reqwest_tenant::ReqwestHttpClientWithAdminSupport,
+    tenant::{TenantConfig, TenantResolution},
 };
 
 #[tokio::main]
@@ -18,8 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== 多租户 OIDC Discovery 测试 ===\n");
 
-    // Create HTTP client with header support
-    let http_client = ReqwestHttpClientWithHeaders::new()?;
+    // Create HTTP client with admin support
+    let http_client = ReqwestHttpClientWithAdminSupport::new()?;
     let cache = MemoryCache::new();
 
     // Test environment
@@ -65,13 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // Test 3: Subdomain mode
-    println!("3. 测试子域名模式...");
-    let subdomain_config = TenantConfig::subdomain(
-        "xiaojinpro".to_string(),
-        "auth.xiaojinpro.com".to_string(),
-    );
-    match discover_with_tenant(issuer, &subdomain_config, &http_client, &cache).await {
+    // Test 3: ClientId mode (Recommended)
+    println!("3. 测试ClientId模式 (推荐)...");
+    let client_id_config = TenantConfig::client_id("xjp-web".to_string());
+    match discover_with_tenant(issuer, &client_id_config, &http_client, &cache).await {
         Ok(metadata) => {
             println!("✅ 成功！");
             println!("   Issuer: {}", metadata.issuer);
@@ -87,26 +84,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             println!("❌ 失败: {}", e);
-            println!("   提示: 子域名模式需要服务端正确处理Host头");
         }
     }
     println!();
 
-    // Test 4: Test with production domain
-    println!("4. 测试生产域名（直接访问）...");
+    // Test 4: Test with new TenantResolution priority system
+    println!("4. 测试新的TenantResolution优先级系统...");
     let prod_issuer = "https://auth.xiaojinpro.com";
-    let prod_config = TenantConfig::subdomain(
-        "xiaojinpro".to_string(),
-        "auth.xiaojinpro.com".to_string(),
-    );
-    match discover_with_tenant(prod_issuer, &prod_config, &http_client, &cache).await {
+    let tenant_resolution = TenantResolution {
+        client_id_tenant: Some("xjp-web".to_string()),
+        admin_override_tenant: None,
+        default_tenant: Some("xiaojinpro".to_string()),
+    };
+    match discover_with_tenant_resolution(prod_issuer, &tenant_resolution, &http_client, &cache).await {
         Ok(metadata) => {
             println!("✅ 成功！");
             println!("   完整配置:");
             println!("   - Issuer: {}", metadata.issuer);
             println!("   - Auth Endpoint: {}", metadata.authorization_endpoint);
             println!("   - Token Endpoint: {}", metadata.token_endpoint);
-            println!("   - UserInfo Endpoint: {}", metadata.userinfo_endpoint);
+            if let Some(userinfo) = &metadata.userinfo_endpoint {
+                println!("   - UserInfo Endpoint: {}", userinfo);
+            }
             println!("   - JWKS URI: {}", metadata.jwks_uri);
             println!("   - Supported Scopes: {:?}", metadata.scopes_supported);
             println!("   - Response Types: {:?}", metadata.response_types_supported);

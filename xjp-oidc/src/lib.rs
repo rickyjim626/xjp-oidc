@@ -56,8 +56,10 @@ mod discovery;
 mod exchange;
 pub mod http;
 mod id_token;
+mod introspect;
 mod jwks;
 mod pkce;
+mod userinfo;
 
 // Multi-tenant support modules
 pub mod tenant;
@@ -85,13 +87,13 @@ pub use cache::MokaCacheImpl;
 pub use client::OidcClient;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use dcr::register_client;
+pub use dcr::{register_client, get_client_config};
 
 pub use discovery::discover;
 pub use errors::Error;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use exchange::exchange_code;
+pub use exchange::{exchange_code, refresh_token};
 
 pub use http::{HttpClient, HttpClientError};
 pub use id_token::fetch_jwks;
@@ -103,9 +105,12 @@ pub use http::ReqwestHttpClient;
 pub use http::WasmHttpClient;
 
 pub use id_token::verify_id_token;
+#[cfg(not(target_arch = "wasm32"))]
+pub use introspect::{introspect_token, revoke_token};
 pub use jwks::{Jwk, Jwks};
 pub use pkce::create_pkce;
 pub use types::*;
+pub use userinfo::get_userinfo;
 
 #[cfg(feature = "verifier")]
 pub use verify::JwtVerifier;
@@ -125,12 +130,23 @@ pub mod prelude {
 
     // Multi-tenant support
     pub use crate::{
-        tenant::{TenantConfig, TenantMode},
-        discovery_tenant::{discover_with_tenant, discover_with_tenant_simple},
+        tenant::{TenantConfig, TenantMode, TenantResolution},
+        discovery_tenant::{discover_with_tenant, discover_with_tenant_simple, discover_with_tenant_resolution},
+        http_tenant::{HttpClientWithAdminSupport, HttpClientAdapter},
     };
+    
+    #[cfg(all(not(target_arch = "wasm32"), feature = "http-reqwest"))]
+    pub use crate::http_tenant::reqwest_tenant::ReqwestHttpClientWithAdminSupport;
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub use crate::{exchange_code, register_client, ExchangeCode, RegisterRequest};
+    pub use crate::{
+        exchange_code, refresh_token, register_client, get_client_config,
+        introspect_token, revoke_token,
+        ExchangeCode, RefreshTokenRequest, RegisterRequest,
+        IntrospectRequest, IntrospectResponse, ClientConfig,
+    };
+    
+    pub use crate::{get_userinfo, UserInfo};
 
     #[cfg(feature = "verifier")]
     pub use crate::{JwtVerifier, VerifiedClaims};

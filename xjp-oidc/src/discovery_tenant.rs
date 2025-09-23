@@ -3,83 +3,69 @@
 use crate::{
     cache::Cache,
     errors::{Error, Result},
-    tenant::TenantConfig,
+    tenant::{TenantConfig, TenantResolution},
+    http_tenant::HttpClientWithAdminSupport,
     types::OidcProviderMetadata,
 };
-use serde_json::Value;
 
 /// Default cache TTL for discovery metadata (10 minutes)
 const DEFAULT_DISCOVERY_CACHE_TTL: u64 = 600;
 
-/// Enhanced HTTP client trait with header support for multi-tenant
-#[async_trait::async_trait]
-pub trait HttpClientWithHeaders: Send + Sync {
-    /// Perform a GET request with custom headers and return JSON value
-    async fn get_value_with_headers(
-        &self,
-        url: &str,
-        headers: Vec<(String, String)>,
-    ) -> Result<Value>;
-}
-
 /// Discover OIDC provider metadata with tenant support
 ///
 /// This function extends the standard OIDC Discovery to support multi-tenant setups
-/// by applying tenant configuration to the discovery request.
+/// using the new TenantResolution priority system.
 ///
 /// # Example
 /// ```no_run
-/// # use xjp_oidc::tenant::{TenantConfig, TenantMode};
+/// # use xjp_oidc::tenant::{TenantResolution};
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let tenant_config = TenantConfig::subdomain(
-///     "xiaojinpro".to_string(),
-///     "auth.xiaojinpro.com".to_string()
-/// );
+/// let tenant_resolution = TenantResolution {
+///     client_id_tenant: Some("xjp-web".to_string()),
+///     admin_override_tenant: None,
+///     default_tenant: Some("xiaojinpro".to_string()),
+/// };
 ///
-/// let metadata = discover_with_tenant(
+/// let metadata = discover_with_tenant_resolution(
 ///     "https://auth.xiaojinpro.com",
-///     &tenant_config,
+///     &tenant_resolution,
 ///     &http_client,
 ///     &cache,
 /// ).await?;
 /// # Ok(())
 /// # }
 /// ```
+/// Discover OIDC provider metadata with new tenant resolution system
 #[tracing::instrument(
-    name = "oidc_discover_tenant",
+    name = "oidc_discover_tenant_resolution",
     skip(http, cache),
     fields(
         issuer = %issuer,
-        tenant = ?tenant_config.tenant,
-        mode = ?tenant_config.mode
+        resolved_tenant = ?tenant_resolution.resolve()
     )
 )]
-pub async fn discover_with_tenant(
+pub async fn discover_with_tenant_resolution(
     issuer: &str,
-    tenant_config: &TenantConfig,
-    http: &dyn HttpClientWithHeaders,
+    tenant_resolution: &TenantResolution,
+    http: &dyn HttpClientWithAdminSupport,
     cache: &dyn Cache<String, OidcProviderMetadata>,
 ) -> Result<OidcProviderMetadata> {
     tracing::info!(
         target: "xjp_oidc::discovery",
-        "开始多租户 OIDC 发现, mode: {:?}, tenant: {:?}",
-        tenant_config.mode,
-        tenant_config.tenant
+        "开始多租户 OIDC 发现, resolved_tenant: {:?}",
+        tenant_resolution.resolve()
     );
-
-    // Validate tenant configuration
-    tenant_config.validate().map_err(|e| Error::Discovery(e))?;
 
     // Validate issuer URL
     if issuer.is_empty() {
         return Err(Error::InvalidParam("issuer cannot be empty"));
     }
 
-    // Build cache key with tenant info
+    // Build cache key with resolved tenant info
     let cache_key = format!(
         "discovery:{}:{}",
         issuer,
-        tenant_config.tenant.as_deref().unwrap_or("default")
+        tenant_resolution.tenant_id()
     );
 
     // Check cache first
@@ -91,21 +77,17 @@ pub async fn discover_with_tenant(
     // Build discovery URL
     let discovery_url = build_discovery_url(issuer)?;
 
-    // Apply tenant configuration to URL
-    let final_url = tenant_config
-        .apply_to_url(&discovery_url)
-        .map_err(|e| Error::Discovery(e))?;
+    // Add client_id parameter if available
+    let final_url = if let Some(client_id) = &tenant_resolution.client_id_tenant {
+        let separator = if discovery_url.contains('?') { "&" } else { "?" };
+        format!("{}{}client_id={}", discovery_url, separator, client_id)
+    } else {
+        discovery_url
+    };
 
-    // Prepare headers based on tenant mode
-    let mut headers = Vec::new();
-    if let Some(host_header) = tenant_config.get_host_header() {
-        tracing::debug!("Adding Host header: {}", host_header);
-        headers.push(("Host".to_string(), host_header));
-    }
-
-    // Fetch metadata with headers
+    // Fetch metadata with admin override if available
     let value = http
-        .get_value_with_headers(&final_url, headers)
+        .get_value_with_admin_override(&final_url, tenant_resolution.admin_override_tenant.as_deref())
         .await?;
 
     // Check if the response is an error
@@ -175,19 +157,51 @@ fn validate_metadata(metadata: &OidcProviderMetadata, expected_issuer: &str) -> 
     Ok(())
 }
 
+/// Legacy function for backward compatibility with TenantConfig
+#[tracing::instrument(
+    name = "oidc_discover_tenant_legacy",
+    skip(http, cache),
+    fields(
+        issuer = %issuer,
+        tenant = ?tenant_config.tenant,
+        mode = ?tenant_config.mode
+    )
+)]
+pub async fn discover_with_tenant(
+    issuer: &str,
+    tenant_config: &TenantConfig,
+    http: &dyn HttpClientWithAdminSupport,
+    cache: &dyn Cache<String, OidcProviderMetadata>,
+) -> Result<OidcProviderMetadata> {
+    // Convert TenantConfig to TenantResolution
+    let tenant_resolution = TenantResolution {
+        client_id_tenant: match tenant_config.mode {
+            crate::tenant::TenantMode::ClientId => tenant_config.tenant.clone(),
+            _ => None,
+        },
+        admin_override_tenant: None,
+        default_tenant: match tenant_config.mode {
+            crate::tenant::TenantMode::Single | 
+            crate::tenant::TenantMode::QueryParam => tenant_config.tenant.clone(),
+            _ => None,
+        },
+    };
+
+    discover_with_tenant_resolution(issuer, &tenant_resolution, http, cache).await
+}
+
 /// Convenience wrapper for backward compatibility
 pub async fn discover_with_tenant_simple(
     issuer: &str,
     tenant: Option<String>,
-    http: &dyn HttpClientWithHeaders,
+    http: &dyn HttpClientWithAdminSupport,
     cache: &dyn Cache<String, OidcProviderMetadata>,
 ) -> Result<OidcProviderMetadata> {
-    let tenant_config = if let Some(tenant_id) = tenant {
-        // Default to query param mode for simple tenant specification
-        TenantConfig::query_param(tenant_id)
-    } else {
-        TenantConfig::single()
+    let tenant_resolution = TenantResolution {
+        client_id_tenant: None,
+        admin_override_tenant: None,
+        default_tenant: tenant,
     };
 
-    discover_with_tenant(issuer, &tenant_config, http, cache).await
+    discover_with_tenant_resolution(issuer, &tenant_resolution, http, cache).await
 }

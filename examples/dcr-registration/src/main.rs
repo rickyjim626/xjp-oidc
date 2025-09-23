@@ -393,7 +393,6 @@ impl DcrTool {
             "your-initial-access-token", // TODO: 从配置或环境变量获取
             request,
             self.http_client.as_ref(),
-            self.cache.as_ref(),
         )
         .await?;
 

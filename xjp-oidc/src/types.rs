@@ -41,12 +41,38 @@ pub struct OidcProviderMetadata {
     /// PKCE code challenge methods supported
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_challenge_methods_supported: Option<Vec<String>>,
+    /// Subject identifier types supported (REQUIRED by OIDC spec)
+    #[serde(default = "default_subject_types_supported")]
+    pub subject_types_supported: Vec<String>,
+    /// Token introspection endpoint URL (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introspection_endpoint: Option<String>,
+    /// Token revocation endpoint URL (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revocation_endpoint: Option<String>,
+    /// Frontchannel logout supported
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frontchannel_logout_supported: Option<bool>,
+    /// Frontchannel logout session supported
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frontchannel_logout_session_supported: Option<bool>,
+    /// Backchannel logout supported
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backchannel_logout_supported: Option<bool>,
+    /// Backchannel logout session supported
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backchannel_logout_session_supported: Option<bool>,
     /// Tenant ID (for multi-tenant setups)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<i64>,
     /// Tenant slug (for multi-tenant setups)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_slug: Option<String>,
+}
+
+/// Default value for subject_types_supported
+fn default_subject_types_supported() -> Vec<String> {
+    vec!["public".to_string()]
 }
 
 /// Token response from token endpoint
@@ -323,4 +349,180 @@ impl Default for VerifyOptions<'_> {
     fn default() -> Self {
         panic!("VerifyOptions requires explicit construction with required fields")
     }
+}
+
+/// Token introspection request
+#[derive(Debug, Clone)]
+pub struct IntrospectRequest {
+    /// Issuer URL
+    pub issuer: String,
+    /// Client ID
+    pub client_id: String,
+    /// Client secret (for confidential clients)
+    pub client_secret: Option<String>,
+    /// Token to introspect
+    pub token: String,
+    /// Hint about the type of the token
+    pub token_type_hint: Option<String>,
+    /// Token endpoint authentication method
+    pub token_endpoint_auth_method: Option<String>,
+}
+
+/// Token introspection response (RFC 7662)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectResponse {
+    /// Whether the token is active
+    pub active: bool,
+    /// Space-separated list of scopes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Client identifier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// Human-readable identifier for the resource owner
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// Type of the token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_type: Option<String>,
+    /// Expiration time (Unix timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exp: Option<i64>,
+    /// Issued at time (Unix timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iat: Option<i64>,
+    /// Not before time (Unix timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nbf: Option<i64>,
+    /// Subject of the token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub: Option<String>,
+    /// Audience of the token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<Vec<String>>,
+    /// Issuer of the token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+    /// Unique identifier for the token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jti: Option<String>,
+}
+
+/// Refresh token request
+#[derive(Debug, Clone)]
+pub struct RefreshTokenRequest {
+    /// Issuer URL
+    pub issuer: String,
+    /// Client ID
+    pub client_id: String,
+    /// Client secret (for confidential clients)
+    pub client_secret: Option<String>,
+    /// Refresh token
+    pub refresh_token: String,
+    /// Requested scope (optional)
+    pub scope: Option<String>,
+    /// Token endpoint authentication method
+    pub token_endpoint_auth_method: Option<String>,
+}
+
+/// UserInfo response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserInfo {
+    /// Subject - Identifier for the End-User
+    pub sub: String,
+    /// End-User's full name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Given name(s) or first name(s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub given_name: Option<String>,
+    /// Surname(s) or last name(s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family_name: Option<String>,
+    /// Middle name(s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub middle_name: Option<String>,
+    /// Casual name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nickname: Option<String>,
+    /// Preferred username
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_username: Option<String>,
+    /// Profile page URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// Profile picture URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<String>,
+    /// Web page or blog URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    /// Preferred e-mail address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// True if e-mail address has been verified
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_verified: Option<bool>,
+    /// Gender
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    /// Birthday (ISO 8601:2004 YYYY-MM-DD format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birthdate: Option<String>,
+    /// Time zone (e.g., Europe/Paris, America/Los_Angeles)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoneinfo: Option<String>,
+    /// Locale (e.g., en-US, fr-CA)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+    /// Preferred telephone number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
+    /// True if phone number has been verified
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number_verified: Option<bool>,
+    /// Preferred postal address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<serde_json::Value>,
+    /// Time the information was last updated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    // Custom claims for XiaojinPro
+    /// Admin flag for XiaojinPro admin users
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xjp_admin: Option<bool>,
+    /// Authentication methods reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amr: Option<Vec<String>>,
+    /// Authentication time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<i64>,
+}
+
+/// Client configuration from DCR GET endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientConfig {
+    /// Client ID
+    pub client_id: String,
+    /// Client secret (for confidential clients)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+    /// Client name
+    pub client_name: String,
+    /// Redirect URIs
+    pub redirect_uris: Vec<String>,
+    /// Post-logout redirect URIs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_logout_redirect_uris: Option<Vec<String>>,
+    /// Grant types
+    pub grant_types: Vec<String>,
+    /// Response types
+    pub response_types: Vec<String>,
+    /// Token endpoint auth method
+    pub token_endpoint_auth_method: String,
+    /// Allowed scopes
+    pub scope: String,
+    /// Client secret expiration time
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret_expires_at: Option<i64>,
 }

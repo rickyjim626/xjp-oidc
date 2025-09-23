@@ -191,6 +191,15 @@ mod tests {
             token_endpoint_auth_methods_supported: None,
             id_token_signing_alg_values_supported: None,
             code_challenge_methods_supported: None,
+            subject_types_supported: vec!["public".to_string()],
+            introspection_endpoint: None,
+            revocation_endpoint: None,
+            frontchannel_logout_supported: None,
+            frontchannel_logout_session_supported: None,
+            backchannel_logout_supported: None,
+            backchannel_logout_session_supported: None,
+            tenant_id: None,
+            tenant_slug: None,
         };
 
         assert!(validate_metadata(&metadata, "https://auth.example.com").is_ok());
@@ -214,6 +223,15 @@ mod tests {
             token_endpoint_auth_methods_supported: None,
             id_token_signing_alg_values_supported: None,
             code_challenge_methods_supported: None,
+            subject_types_supported: vec!["public".to_string()],
+            introspection_endpoint: None,
+            revocation_endpoint: None,
+            frontchannel_logout_supported: None,
+            frontchannel_logout_session_supported: None,
+            backchannel_logout_supported: None,
+            backchannel_logout_session_supported: None,
+            tenant_id: None,
+            tenant_slug: None,
         };
 
         let result = validate_metadata(&metadata, "https://auth.example.com");

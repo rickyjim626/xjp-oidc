@@ -235,10 +235,148 @@ pub async fn exchange_code_with_endpoint(
 }
 
 
-// WASM stub
+/// Refresh an access token using a refresh token
+///
+/// This exchanges a refresh token for a new access token and optionally
+/// a new refresh token.
+///
+/// # Example
+/// ```no_run
+/// # #[cfg(not(target_arch = "wasm32"))]
+/// # use xjp_oidc::{refresh_token, RefreshTokenRequest, http::ReqwestHttpClient};
+/// # #[cfg(not(target_arch = "wasm32"))]
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let http = ReqwestHttpClient::default();
+///
+/// let tokens = refresh_token(RefreshTokenRequest {
+///     issuer: "https://auth.example.com".into(),
+///     client_id: "my-client".into(),
+///     client_secret: Some("my-secret".into()),
+///     refresh_token: "refresh_token_here".into(),
+///     scope: Some("openid profile email".into()),
+///     token_endpoint_auth_method: None,
+/// }, &http).await?;
+///
+/// println!("New access token: {}", tokens.access_token);
+/// # Ok(())
+/// # }
+/// ```
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn refresh_token(
+    params: crate::types::RefreshTokenRequest,
+    http: &dyn HttpClient,
+) -> Result<TokenResponse> {
+    // Validate parameters
+    if params.issuer.is_empty() {
+        return Err(Error::InvalidParam("issuer cannot be empty"));
+    }
+    if params.client_id.is_empty() {
+        return Err(Error::InvalidParam("client_id cannot be empty"));
+    }
+    if params.refresh_token.is_empty() {
+        return Err(Error::InvalidParam("refresh_token cannot be empty"));
+    }
+
+    // Get token endpoint from discovery
+    let cache = crate::cache::NoOpCache;
+    let metadata = discover(&params.issuer, http, &cache).await?;
+
+    // Build form data
+    let mut form = vec![
+        ("grant_type".to_string(), "refresh_token".to_string()),
+        ("refresh_token".to_string(), params.refresh_token.clone()),
+    ];
+
+    // Add scope if provided
+    if let Some(scope) = &params.scope {
+        if !scope.is_empty() {
+            form.push(("scope".to_string(), scope.clone()));
+        }
+    }
+
+    // Determine authentication method based on token_endpoint_auth_method
+    let auth_method = params.token_endpoint_auth_method
+        .as_deref()
+        .unwrap_or(if params.client_secret.is_some() {
+            "client_secret_basic"
+        } else {
+            "none"
+        });
+
+    let auth_header = match auth_method {
+        "client_secret_basic" => {
+            if let Some(client_secret) = &params.client_secret {
+                let credentials = format!("{}:{}", params.client_id, client_secret);
+                let encoded = general_purpose::STANDARD.encode(credentials.as_bytes());
+                Some(("Authorization".to_string(), format!("Basic {}", encoded)))
+            } else {
+                return Err(Error::InvalidParam("client_secret_basic requires client_secret"));
+            }
+        },
+        "client_secret_post" => {
+            // Add client credentials to form data
+            form.push(("client_id".to_string(), params.client_id.clone()));
+            if let Some(client_secret) = &params.client_secret {
+                form.push(("client_secret".to_string(), client_secret.clone()));
+            } else {
+                return Err(Error::InvalidParam("client_secret_post requires client_secret"));
+            }
+            None
+        },
+        "none" | "public" => {
+            // Public client - include client_id in form
+            form.push(("client_id".to_string(), params.client_id.clone()));
+            None
+        },
+        "private_key_jwt" | "client_secret_jwt" => {
+            // TODO: Implement JWT-based authentication
+            return Err(Error::InvalidParam(
+                "JWT-based authentication methods are not yet supported"
+            ));
+        },
+        _ => {
+            return Err(Error::InvalidParam(
+                "Unknown authentication method"
+            ));
+        }
+    };
+
+    // Make the token request
+    let response = http
+        .post_form_value(
+            &metadata.token_endpoint,
+            &form,
+            auth_header.as_ref().map(|(k, v)| (k.as_str(), v.as_str())),
+        )
+        .await
+        .map_err(|e| {
+            // Try to parse OAuth error from response
+            if let crate::http::HttpClientError::InvalidStatus { status: _, message } = &e {
+                if let Ok(oauth_error) = serde_json::from_str::<OAuthError>(&message) {
+                    return Error::oauth(oauth_error.error, oauth_error.error_description);
+                }
+            }
+            Error::Network(format!("Token refresh failed: {}", e))
+        })?;
+
+    // Parse token response
+    let tokens: TokenResponse = serde_json::from_value(response)?;
+
+    Ok(tokens)
+}
+
+// WASM stubs
 #[cfg(target_arch = "wasm32")]
 pub async fn exchange_code(
     _params: crate::types::ExchangeCode,
+    _http: &dyn crate::http::HttpClient,
+) -> crate::errors::Result<crate::types::TokenResponse> {
+    Err(crate::errors::Error::ServerOnly)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn refresh_token(
+    _params: crate::types::RefreshTokenRequest,
     _http: &dyn crate::http::HttpClient,
 ) -> crate::errors::Result<crate::types::TokenResponse> {
     Err(crate::errors::Error::ServerOnly)
