@@ -3,15 +3,21 @@ name = "test-backend-connection"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["sse"]
+sse = ["xjp-oidc/sse"]
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-xjp-oidc = { path = "../xjp-oidc", features = ["http-reqwest", "moka"] }
+xjp-oidc = { path = "../xjp-oidc", features = ["http-reqwest", "moka", "sse"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 colored = "2.0"
 reqwest = { version = "0.12", features = ["json"] }
 url = "2.5"
 base64 = "0.22"
+chrono = "0.4"
+futures-util = "0.3"
