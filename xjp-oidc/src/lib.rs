@@ -70,6 +70,10 @@ pub mod http_tenant;
 #[cfg(feature = "verifier")]
 mod verify;
 
+// SSE support (server-only)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod sse;
+
 // Re-export main types and functions
 pub use auth_url::{
     build_auth_url, build_auth_url_with_metadata, build_end_session_url,
@@ -150,4 +154,11 @@ pub mod prelude {
 
     #[cfg(feature = "verifier")]
     pub use crate::{JwtVerifier, VerifiedClaims};
+    
+    // SSE support
+    #[cfg(all(not(target_arch = "wasm32"), feature = "sse"))]
+    pub use crate::sse::{
+        start_login_session, check_login_status, subscribe_login_events,
+        LoginStatus, LoginState, LoginEvent, LoginMonitorConfig,
+    };
 }

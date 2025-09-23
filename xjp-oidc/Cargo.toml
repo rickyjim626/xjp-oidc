@@ -26,6 +26,7 @@ browser-min = []  # Minimal browser support
 tracing = ["dep:tracing"]
 moka = ["dep:moka", "tokio"]
 lru = ["dep:lru"]
+sse = ["eventsource-client", "futures-util", "tokio-stream"]
 
 [dependencies]
 # Core dependencies
@@ -71,6 +72,11 @@ http = { version = "1.0", optional = true }
 # Logging
 tracing = { version = "0.1", optional = true }
 
+# SSE support
+eventsource-client = { version = "0.12", optional = true }
+futures-util = { version = "0.3", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "time"] }
 moka = { version = "0.12", features = ["future"] }
@@ -110,6 +116,11 @@ required-features = ["verifier", "http-reqwest", "moka"]
 name = "cli-discover"
 path = "../examples/cli-discover/main.rs"
 required-features = ["http-reqwest"]
+
+[[example]]
+name = "sse-login"
+path = "../examples/sse-login-example.rs"
+required-features = ["http-reqwest", "sse"]
 
 
 [package.metadata.docs.rs]
